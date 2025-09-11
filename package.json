@@ -1,0 +1,21 @@
+{
+  "name": "thai-handmate",
+  "version": "1.0.0",
+  "description": "ระบบจดจำภาษามือไทยด้วย Teachable Machine และสร้างประโยคด้วย AI",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host --port 5173",
+    "build": "vite build",
+    "preview": "vite preview --port 5173"
+  },
+  "dependencies": {
+    "@teachablemachine/image": "^0.8.5",
+    "face-api.js": "^0.22.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.4.19"
+  }
+}
