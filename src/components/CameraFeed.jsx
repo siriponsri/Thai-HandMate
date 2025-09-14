@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react'
-import { predict, loadModels, getModelStatus } from '../lib/tm.js'
+import { predict, loadModels, getModelStatus, processImage } from '../lib/tm.js'
 import { CONFIG } from '../lib/config.js'
 
 export default function CameraFeed({ onCapture }) {
@@ -79,19 +79,25 @@ export default function CameraFeed({ onCapture }) {
         const thumbnailUrl = URL.createObjectURL(blob)
         
         try {
-          // ทำนายผล
-          const result = await predict(video)
+          // ใช้ฟังก์ชันใหม่ที่ประมวลผลทั้ง hand และ face
+          const result = await processImage(video)
           
-          console.log('🎯 ผลการทำนาย:', result)
+          console.log('🎯 ผลการประมวลผล (Hand + Face):', result)
           
           // ส่งผลไปยัง parent component และ dispatch event
           const captureData = {
-            word: result.word,
-            confidence: result.confidence,
+            // ข้อมูลหลักสำหรับแสดงผล (backward compatibility)
+            word: result.hands.bestWord,
+            confidence: result.hands.confidence,
             thumbnailUrl: thumbnailUrl,
-            source: result.source,
-            details: result.details,
-            timestamp: new Date().toISOString()
+            source: result.hands.source,
+            details: result.hands.details,
+            timestamp: result.timestamp,
+            
+            // ข้อมูลเพิ่มเติมสำหรับ LLM
+            hands: result.hands,
+            face: result.face,
+            forLLM: result.forLLM
           }
           
           if (onCapture) {
@@ -111,7 +117,11 @@ export default function CameraFeed({ onCapture }) {
               thumbnailUrl: thumbnailUrl,
               source: 'error',
               details: error.message,
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              // ข้อมูลเริ่มต้นสำหรับ error case
+              hands: { bestWord: 'Unknown', confidence: 0, source: 'error', allResults: [], details: error.message },
+              face: { bestEmotion: 'neutral', confidence: 0, allEmotions: [], details: 'ไม่สามารถตรวจจับได้เนื่องจากข้อผิดพลาด' },
+              forLLM: { words: [], emotion: 'neutral', wordConfidences: [], emotionConfidences: [] }
             }
             
             onCapture(captureData)

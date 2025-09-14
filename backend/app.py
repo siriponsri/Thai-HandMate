@@ -38,6 +38,7 @@ TYPHOON_API_BASE = os.getenv('TYPHOON_API_BASE', 'https://api.typhoon.io/v1/chat
 # Models
 class GenerateRequest(BaseModel):
     words: List[str]
+    emotion: str = "neutral"  # เพิ่มข้อมูลอารมณ์
 
 class GenerateResponse(BaseModel):
     sentences: List[str]
@@ -67,7 +68,7 @@ async def generate_sentences(request: GenerateRequest):
     # ลองใช้ Typhoon API ก่อน
     if TYPHOON_API_KEY:
         try:
-            sentences = await generate_with_typhoon(request.words)
+            sentences = await generate_with_typhoon(request.words, request.emotion)
             return GenerateResponse(sentences=sentences, provider="typhoon")
         except Exception as e:
             print(f"[ERROR] Typhoon API ไม่สามารถใช้งานได้: {e}")
@@ -77,30 +78,41 @@ async def generate_sentences(request: GenerateRequest):
     fallback_sentences = generate_fallback_sentences(words_text)
     return GenerateResponse(sentences=fallback_sentences, provider="fallback")
 
-async def generate_with_typhoon(words: List[str]) -> List[str]:
+async def generate_with_typhoon(words: List[str], emotion: str = "neutral") -> List[str]:
     """สร้างประโยคด้วย Typhoon LLM"""
     
-    words_text = " ".join(words)
+    # สร้าง JSON สำหรับข้อมูลภาษามือและอารมณ์
+    words_json = json.dumps({
+        "words": words,
+        "emotion": emotion
+    }, ensure_ascii=False)
     
-    # สร้าง prompt ภาษาไทย
-    system_prompt = """คุณเป็นผู้ช่วยที่เชี่ยวชาญในการสร้างประโยคภาษาไทยจากคำศัพท์ภาษามือ 
-ให้สร้างประโยคที่เป็นธรรมชาติและสื่อความหมายได้ชัดเจน โดยใช้คำที่ให้มาทั้งหมดหรือส่วนใหญ่"""
+    # Prompt ใหม่ตามที่คุณระบุ
+    system_prompt = """คุณเป็นผู้ช่วย AI ที่เชี่ยวชาญภาษาไทยและภาษามือไทย ให้สร้างประโยคไทยที่เป็นธรรมชาติ ถูกต้องตามหลักภาษา และใช้ในชีวิตประจำวันได้จริง"""
 
-    user_prompt = f"""จากคำเหล่านี้: {words_text}
-กรุณาสร้างประโยคไทย 2-3 ประโยค ที่เป็นธรรมชาติและสื่อความหมายได้ดี
+    user_prompt = f"""จากข้อมูลภาษามือไทยและอารมณ์เหล่านี้: {words_json}
 
-ตอบกลับในรูปแบบ JSON:
-{{"sentences": ["ประโยคที่ 1", "ประโยคที่ 2", "ประโยคที่ 3"]}}"""
+กรุณาสร้างประโยคไทยที่เป็นธรรมชาติ 3 ประโยค โดย:
+- ใช้คำภาษามือที่ให้มาทั้งหมดหรือส่วนใหญ่
+- พิจารณาอารมณ์ที่ตรวจพบเพื่อให้ประโยคสอดคล้องกับบริบท
+- เป็นประโยคที่คนไทยใช้จริงในชีวิตประจำวัน
+- ถูกต้องตามหลักไวยากรณ์ไทย
+- สื่อความหมายได้ชัดเจน
+- เรียงคำต่อกันเป็นประโยคภาษาไทยที่สมบูรณ์ที่สุด
+
+ตอบเป็นรายการประโยคเท่านั้น เช่น:
+1. [ประโยคที่ 1]
+2. [ประโยคที่ 2] 
+3. [ประโยคที่ 3]"""
 
     payload = {
-        "model": "typhoon-v1.5x-70b-instruct",
+        "model": "typhoon-v2.1-12b-instruct",
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ],
-        "max_tokens": 500,
-        "temperature": 0.7,
-        "response_format": {"type": "json_object"}
+        "max_tokens": 700,
+        "temperature": 0.5
     }
 
     headers = {
@@ -122,14 +134,17 @@ async def generate_with_typhoon(words: List[str]) -> List[str]:
         data = response.json()
         content = data['choices'][0]['message']['content']
         
-        # แปลง JSON response
-        try:
-            result = json.loads(content)
-            sentences = result.get('sentences', [])
-            return sentences[:3]  # เอาแค่ 3 ประโยคแรก
-        except json.JSONDecodeError:
-            # ถ้า JSON ไม่ถูกต้อง ใช้เนื้อหาโดยตรง
-            return [content]
+        # แปลงการตอบกลับเป็นรายการประโยค
+        sentences = []
+        for line in content.strip().split('\n'):
+            line = line.strip()
+            if line and not line.startswith('#'):
+                # ลบหมายเลข หรือ bullet points
+                clean_line = line.lstrip('123456789.- ')
+                if clean_line:
+                    sentences.append(clean_line)
+        
+        return sentences[:3]  # เอาแค่ 3 ประโยคแรก
 
 def generate_fallback_sentences(words_text: str) -> List[str]:
     """สร้างประโยคแบบ fallback เมื่อ API ไม่พร้อมใช้งาน"""

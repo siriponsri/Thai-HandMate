@@ -5,6 +5,7 @@ export default function RightPanel() {
   const [capturedWords, setCapturedWords] = useState([])
   const [generatedSentence, setGeneratedSentence] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
+  const [latestEmotion, setLatestEmotion] = useState('neutral') // เก็บอารมณ์ล่าสุด
   
   // ฟังก์ชันรับผลการจับภาพจาก CameraFeed
   React.useEffect(() => {
@@ -12,10 +13,25 @@ export default function RightPanel() {
     const handleCapture = (event) => {
       const captureData = event.detail
       
+      // อัปเดตอารมณ์ล่าสุดจากข้อมูล face
+      if (captureData.face && captureData.face.bestEmotion) {
+        setLatestEmotion(captureData.face.bestEmotion)
+        console.log('😊 อารมณ์ล่าสุด:', captureData.face.bestEmotion, 
+                   `(${(captureData.face.confidence * 100).toFixed(1)}%)`)
+      }
+      
       // เพิ่มคำที่จับได้ (ยกเว้น Unknown)
       if (captureData.word !== 'Unknown' && captureData.confidence >= CONFIG.MIN_CONFIDENCE) {
         setCapturedWords(prev => [...prev, captureData])
         console.log('📝 เพิ่มคำ:', captureData.word, `(${(captureData.confidence * 100).toFixed(1)}%)`)
+        
+        // แสดงข้อมูลเพิ่มเติมถ้ามี
+        if (captureData.hands && captureData.hands.allResults) {
+          console.log('🤏 ผลลัพธ์ทั้งหมด (Hand):', captureData.hands.allResults)
+        }
+        if (captureData.face && captureData.face.allEmotions) {
+          console.log('😊 อารมณ์ทั้งหมด (Face):', captureData.face.allEmotions)
+        }
       }
     }
     
@@ -39,13 +55,18 @@ export default function RightPanel() {
     try {
       const words = capturedWords.map(item => item.word)
       
-      // เรียก API backend
+      console.log('📤 ส่งข้อมูลไป Backend:', { words, emotion: latestEmotion })
+      
+      // เรียก API backend พร้อมข้อมูลอารมณ์
       const response = await fetch(`${CONFIG.API_BASE_URL}/api/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ words })
+        body: JSON.stringify({ 
+          words: words,
+          emotion: latestEmotion 
+        })
       })
       
       if (response.ok) {
@@ -73,6 +94,7 @@ export default function RightPanel() {
   const handleClearWords = () => {
     setCapturedWords([])
     setGeneratedSentence('')
+    setLatestEmotion('neutral') // รีเซ็ตอารมณ์ด้วย
   }
   
   return (
@@ -81,15 +103,22 @@ export default function RightPanel() {
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-bold text-text">คำที่จับได้</h3>
-          {capturedWords.length > 0 && (
-            <button 
-              className="btn btn-secondary"
-              onClick={handleClearWords}
-              style={{ fontSize: '0.875rem', padding: '0.5rem 1rem' }}
-            >
-              🗑️ ลบทั้งหมด
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            {/* แสดงอารมณ์ปัจจุบัน */}
+            <div className="flex items-center gap-1 text-sm">
+              <span>😊</span>
+              <span className="text-muted-foreground">อารมณ์: {latestEmotion}</span>
+            </div>
+            {capturedWords.length > 0 && (
+              <button 
+                className="btn btn-secondary"
+                onClick={handleClearWords}
+                style={{ fontSize: '0.875rem', padding: '0.5rem 1rem' }}
+              >
+                🗑️ ลบทั้งหมด
+              </button>
+            )}
+          </div>
         </div>
         
         {capturedWords.length === 0 ? (

@@ -1,50 +1,70 @@
 import React, { useEffect, useState } from 'react'
-import * as faceapi from 'face-api.js'
+import { getModelStatus } from '../lib/tm.js'
 import { CONFIG } from '../lib/config.js'
 
 export default function StatusBadge() {
-  const [faceStatus, setFaceStatus] = useState('loading') // 'loading', 'ready', 'not-ready'
-  const [isLoading, setIsLoading] = useState(true)
+  const [modelStatus, setModelStatus] = useState({
+    hasAnyModel: false,
+    hasModelA: false,
+    hasModelB: false,
+    hasModelC: false,
+    hasFaceModels: false,
+    isLoading: true
+  })
   
   useEffect(() => {
-    async function initFaceAPI() {
-      try {
-        console.log('🔄 เริ่มโหลด face-api.js...')
-        
-        // พยายามโหลด tiny face detector model
-        await faceapi.nets.tinyFaceDetector.loadFromUri(CONFIG.FACE_MODEL_PATH)
-        
-        console.log('✅ โหลด face-api.js เสร็จแล้ว')
-        setFaceStatus('ready')
-        
-      } catch (error) {
-        console.warn('⚠️ ไม่สามารถโหลด face-api.js ได้:', error.message)
-        setFaceStatus('not-ready')
-      } finally {
-        setIsLoading(false)
-      }
+    // ตรวจสอบสถานะโมเดลทุก ๆ 1 วินาที
+    const checkStatus = () => {
+      const status = getModelStatus()
+      setModelStatus(status)
     }
     
-    initFaceAPI()
+    // เช็คครั้งแรก
+    checkStatus()
+    
+    // เช็คทุก 1 วินาที
+    const interval = setInterval(checkStatus, 1000)
+    
+    return () => clearInterval(interval)
   }, [])
   
   const getStatusInfo = () => {
-    switch (faceStatus) {
-      case 'loading':
-        return { text: '⏳ กำลังโหลด...', className: 'badge-warning' }
-      case 'ready':
-        return { text: '✅ ใบหน้า: พร้อม', className: 'badge-success' }
-      case 'not-ready':
-      default:
-        return { text: '⚠️ ใบหน้า: ไม่พร้อม', className: 'badge-warning' }
+    const { hasAnyModel, hasModelA, hasModelB, hasModelC, hasFaceModels, isLoading } = modelStatus
+    
+    if (isLoading) {
+      return { text: '⏳ กำลังโหลด...', className: 'badge-warning' }
+    }
+    
+    // นับโมเดลที่พร้อมใช้งาน
+    const handModels = [hasModelA, hasModelB, hasModelC].filter(Boolean)
+    const totalReady = handModels.length + (hasFaceModels ? 1 : 0)
+    
+    if (totalReady === 4) {
+      return { text: '✅ ทุกโมเดลพร้อม (4/4)', className: 'badge-success' }
+    } else if (totalReady >= 2) {
+      return { text: `🟡 โมเดลพร้อม (${totalReady}/4)`, className: 'badge-warning' }
+    } else if (hasAnyModel || hasFaceModels) {
+      return { text: `🟠 โมเดลพร้อม (${totalReady}/4)`, className: 'badge-warning' }
+    } else {
+      return { text: '❌ ไม่มีโมเดล (0/4)', className: 'badge-error' }
     }
   }
   
   const statusInfo = getStatusInfo()
   
   return (
-    <div className={`badge ${statusInfo.className}`}>
-      {statusInfo.text}
+    <div className="flex items-center gap-2">
+      <div className={`badge ${statusInfo.className}`}>
+        {statusInfo.text}
+      </div>
+      
+      {/* แสดงรายละเอียดโมเดลแต่ละตัว */}
+      <div className="hidden md:flex items-center gap-1 text-xs">
+        <span className={`w-2 h-2 rounded-full ${modelStatus.hasModelA ? 'bg-green-500' : 'bg-gray-400'}`} title="Hand Model A"></span>
+        <span className={`w-2 h-2 rounded-full ${modelStatus.hasModelB ? 'bg-green-500' : 'bg-gray-400'}`} title="Hand Model B"></span>
+        <span className={`w-2 h-2 rounded-full ${modelStatus.hasModelC ? 'bg-green-500' : 'bg-gray-400'}`} title="Hand Model C"></span>
+        <span className={`w-2 h-2 rounded-full ${modelStatus.hasFaceModels ? 'bg-green-500' : 'bg-gray-400'}`} title="Face API"></span>
+      </div>
     </div>
   )
 }
