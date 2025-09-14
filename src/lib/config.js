@@ -2,8 +2,8 @@
 
 // ค่าคงที่หลัก
 export const CONFIG = {
-  // ค่าความมั่นใจขั้นต่ำ (60%)
-  MIN_CONFIDENCE: 0.60,
+  // ค่าความมั่นใจขั้นต่ำ (40%)
+  MIN_CONFIDENCE: 0.40,
   
   // เปิดใช้งาน Unknown-first (ครั้งแรกจะได้ Unknown เสมอ)
   UNKNOWN_FIRST: false,  // ปิดเพื่อให้ทำงานจริง

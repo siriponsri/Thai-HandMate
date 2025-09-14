@@ -117,6 +117,20 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
    ```
 
 2. **รันระบบ**
+
+   **วิธีที่ 1: รัน command เดียว (แนะนำ)**
+   ```bash
+   # Windows
+   start.bat
+   
+   # หรือใช้ npm
+   npm run start
+   
+   # Linux/Mac
+   ./start.sh
+   ```
+   
+   **วิธีที่ 2: รันแยกกัน**
    ```bash
    # รัน frontend (เทอร์มินัลแรก)
    npm run dev
