@@ -296,6 +296,7 @@ body {
   width: 100%;
   height: auto;
   display: block;
+  transform: scaleX(-1); /* Mirror horizontal - กล้องแบบ reflection */
 }
 
 /* ผลลัพธ์ */
