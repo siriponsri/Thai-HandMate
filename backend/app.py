@@ -11,10 +11,51 @@ from typing import List
 import os
 import json
 import httpx
+import time
+import queue
+import threading
+import asyncio
 from dotenv import load_dotenv
 
 # โหลด environment variables
 load_dotenv()
+
+# Rate Limiting System
+class TyphoonAPIRateLimiter:
+    def __init__(self, requests_per_minute=10):
+        self.requests_per_minute = requests_per_minute
+        self.interval = 60 / requests_per_minute  # วินาทีระหว่างการ request
+        self.last_request_time = 0
+        self.request_queue = queue.Queue()
+        self.lock = threading.Lock()
+        self.is_processing = False
+        
+    async def make_request_async(self, payload, headers, timeout=30.0):
+        """ทำ API request แบบ async พร้อม rate limiting"""
+        
+        # ตรวจสอบ rate limit
+        current_time = time.time()
+        with self.lock:
+            time_since_last = current_time - self.last_request_time
+            
+            if time_since_last < self.interval:
+                sleep_time = self.interval - time_since_last
+                await asyncio.sleep(sleep_time)
+            
+            self.last_request_time = time.time()
+        
+        # ทำ API request
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                TYPHOON_API_BASE,
+                json=payload,
+                headers=headers,
+                timeout=timeout
+            )
+            return response
+
+# สร้าง rate limiter instance
+typhoon_limiter = TyphoonAPIRateLimiter(requests_per_minute=10)  # 10 requests ต่อนาที
 
 app = FastAPI(
     title="Thai-HandMate Backend",
@@ -38,7 +79,9 @@ TYPHOON_API_BASE = os.getenv('TYPHOON_API_BASE', 'https://api.typhoon.io/v1/chat
 # Models
 class GenerateRequest(BaseModel):
     words: List[str]
-    emotion: str = "neutral"  # เพิ่มข้อมูลอารมณ์
+    emotion: str = "neutral"  # อารมณ์หลัก
+    wordConfidences: List[float] = []  # ค่า confidence ของแต่ละคำ
+    emotionConfidences: List[float] = []  # ค่า confidence ของอารมณ์
 
 class GenerateResponse(BaseModel):
     sentences: List[str]
@@ -63,29 +106,46 @@ async def generate_sentences(request: GenerateRequest):
     if not request.words:
         raise HTTPException(status_code=400, detail="ต้องระบุคำอย่างน้อย 1 คำ")
     
-    words_text = " ".join(request.words)
-    
     # ลองใช้ Typhoon API ก่อน
     if TYPHOON_API_KEY:
         try:
-            sentences = await generate_with_typhoon(request.words, request.emotion)
+            sentences = await generate_with_typhoon(
+                request.words, 
+                request.emotion, 
+                request.wordConfidences, 
+                request.emotionConfidences
+            )
             return GenerateResponse(sentences=sentences, provider="typhoon")
         except Exception as e:
-            print(f"[ERROR] Typhoon API ไม่สามารถใช้งานได้: {e}")
+            error_msg = str(e)
+            if "Rate limit exceeded" in error_msg:
+                print(f"[WARNING] Rate limit exceeded - ใช้ fallback")
+            elif "Timeout" in error_msg:
+                print(f"[WARNING] API Timeout - ใช้ fallback")
+            else:
+                print(f"[ERROR] Typhoon API ไม่สามารถใช้งานได้: {e}")
             # ถ้า API ไม่ได้ ใช้ fallback
     
     # Fallback: สร้างประโยคแบบง่าย
-    fallback_sentences = generate_fallback_sentences(words_text)
+    fallback_sentences = generate_fallback_sentences(request.words, request.emotion, request.wordConfidences)
     return GenerateResponse(sentences=fallback_sentences, provider="fallback")
 
-async def generate_with_typhoon(words: List[str], emotion: str = "neutral") -> List[str]:
+async def generate_with_typhoon(words: List[str], emotion: str = "neutral", word_confidences: List[float] = None, emotion_confidences: List[float] = None) -> List[str]:
     """สร้างประโยคด้วย Typhoon LLM"""
     
-    # สร้าง JSON สำหรับข้อมูลภาษามือและอารมณ์
-    words_json = json.dumps({
+    # สร้าง JSON สำหรับข้อมูลภาษามือและอารมณ์ (รวม confidence)
+    data_for_llm = {
         "words": words,
         "emotion": emotion
-    }, ensure_ascii=False)
+    }
+    
+    # เพิ่ม confidence หากมี
+    if word_confidences:
+        data_for_llm["wordConfidences"] = word_confidences
+    if emotion_confidences:
+        data_for_llm["emotionConfidences"] = emotion_confidences
+    
+    words_json = json.dumps(data_for_llm, ensure_ascii=False)
     
     # Prompt ใหม่ตามที่คุณระบุ
     system_prompt = """คุณเป็นผู้ช่วย AI ที่เชี่ยวชาญภาษาไทยและภาษามือไทย ให้สร้างประโยคไทยที่เป็นธรรมชาติ ถูกต้องตามหลักภาษา และใช้ในชีวิตประจำวันได้จริง"""
@@ -120,16 +180,17 @@ async def generate_with_typhoon(words: List[str], emotion: str = "neutral") -> L
         "Content-Type": "application/json"
     }
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            TYPHOON_API_BASE,
-            json=payload,
-            headers=headers,
-            timeout=30.0
-        )
+    try:
+        # ใช้ rate limiter สำหรับการ request
+        response = await typhoon_limiter.make_request_async(payload, headers, timeout=30.0)
+        
+        if response.status_code == 429:  # Too Many Requests
+            print("[WARNING] Rate limit exceeded, กำลังรอ...")
+            await asyncio.sleep(5)  # รอ 5 วินาที แล้วลองใหม่
+            response = await typhoon_limiter.make_request_async(payload, headers, timeout=30.0)
         
         if response.status_code != 200:
-            raise Exception(f"API Error: {response.status_code}")
+            raise Exception(f"API Error: {response.status_code} - {response.text}")
         
         data = response.json()
         content = data['choices'][0]['message']['content']
@@ -145,18 +206,49 @@ async def generate_with_typhoon(words: List[str], emotion: str = "neutral") -> L
                     sentences.append(clean_line)
         
         return sentences[:3]  # เอาแค่ 3 ประโยคแรก
+        
+    except httpx.TimeoutException:
+        raise Exception("API Timeout - ใช้เวลานานเกินไป")
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 429:
+            raise Exception("Rate limit exceeded - กรุณาลองใหม่ในภายหลัง")
+        raise Exception(f"HTTP Error: {e.response.status_code}")
+    except Exception as e:
+        raise Exception(f"API Request Failed: {str(e)}")
 
-def generate_fallback_sentences(words_text: str) -> List[str]:
+def generate_fallback_sentences(words: List[str], emotion: str = "neutral", word_confidences: List[float] = None) -> List[str]:
     """สร้างประโยคแบบ fallback เมื่อ API ไม่พร้อมใช้งาน"""
     
+    words_text = " ".join(words)
+    
+    # เลือกคำที่มี confidence สูงที่สุด (หากมีข้อมูล)
+    if word_confidences and len(word_confidences) == len(words):
+        # จับคู่คำกับ confidence
+        word_conf_pairs = list(zip(words, word_confidences))
+        # เรียงตาม confidence จากสูงไปต่ำ
+        word_conf_pairs.sort(key=lambda x: x[1], reverse=True)
+        # เอาคำที่มี confidence สูงสุด 2-3 คำ
+        high_conf_words = [word for word, conf in word_conf_pairs[:3] if conf > 0.5]
+        if high_conf_words:
+            words_text = " ".join(high_conf_words)
+    
+    # ปรับประโยคตามอารมณ์
+    emotion_suffix = ""
+    if emotion == "happy":
+        emotion_suffix = " 😊"
+    elif emotion == "sad":
+        emotion_suffix = " 😢"
+    elif emotion == "angry":
+        emotion_suffix = " 😠"
+    
     # ประโยคพื้นฐาน
-    basic = words_text
+    basic = f"{words_text}{emotion_suffix}"
     
     # เพิ่มคำสุภาพ
-    polite = f"{words_text} ครับ/ค่ะ"
+    polite = f"{words_text} ครับ/ค่ะ{emotion_suffix}"
     
     # เพิ่มบริบท
-    contextual = f"ฉันต้องการสื่อว่า {words_text}"
+    contextual = f"ฉันต้องการสื่อว่า {words_text}{emotion_suffix}"
     
     return [basic, polite, contextual]
 
