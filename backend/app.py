@@ -119,12 +119,12 @@ async def generate_sentences(request: GenerateRequest):
         except Exception as e:
             error_msg = str(e)
             if "Rate limit exceeded" in error_msg:
-                print(f"[WARNING] Rate limit exceeded - ใช้ fallback")
+                print("[WARNING] Rate limit exceeded - using fallback")
             elif "Timeout" in error_msg:
-                print(f"[WARNING] API Timeout - ใช้ fallback")
+                print("[WARNING] API Timeout - using fallback")
             else:
-                print(f"[ERROR] Typhoon API ไม่สามารถใช้งานได้: {e}")
-            # ถ้า API ไม่ได้ ใช้ fallback
+                print(f"[ERROR] Typhoon API failed: {e}")
+            # If API fails, use fallback
     
     # Fallback: สร้างประโยคแบบง่าย
     fallback_sentences = generate_fallback_sentences(request.words, request.emotion, request.wordConfidences)
@@ -185,8 +185,8 @@ async def generate_with_typhoon(words: List[str], emotion: str = "neutral", word
         response = await typhoon_limiter.make_request_async(payload, headers, timeout=30.0)
         
         if response.status_code == 429:  # Too Many Requests
-            print("[WARNING] Rate limit exceeded, กำลังรอ...")
-            await asyncio.sleep(5)  # รอ 5 วินาที แล้วลองใหม่
+            print("[WARNING] Rate limit exceeded, waiting...")
+            await asyncio.sleep(5)  # Wait 5 seconds and retry
             response = await typhoon_limiter.make_request_async(payload, headers, timeout=30.0)
         
         if response.status_code != 200:
@@ -208,10 +208,10 @@ async def generate_with_typhoon(words: List[str], emotion: str = "neutral", word
         return sentences[:3]  # เอาแค่ 3 ประโยคแรก
         
     except httpx.TimeoutException:
-        raise Exception("API Timeout - ใช้เวลานานเกินไป")
+        raise Exception("API Timeout - request took too long")
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 429:
-            raise Exception("Rate limit exceeded - กรุณาลองใหม่ในภายหลัง")
+            raise Exception("Rate limit exceeded - please try again later")
         raise Exception(f"HTTP Error: {e.response.status_code}")
     except Exception as e:
         raise Exception(f"API Request Failed: {str(e)}")
@@ -255,11 +255,27 @@ def generate_fallback_sentences(words: List[str], emotion: str = "neutral", word
 # รันเซิร์ฟเวอร์
 if __name__ == "__main__":
     import uvicorn
+    import sys
     
-    print("[INFO] เริ่มต้น Thai-HandMate Backend...")
-    print("[API] พร้อมใช้งานที่: http://localhost:8000")
-    print("[DOCS] API Docs: http://localhost:8000/docs")
-    print(f"[KEY] มี API Key: {'YES' if TYPHOON_API_KEY else 'NO (จะใช้ fallback)'}")
+    # แก้ไข encoding สำหรับ Windows console
+    try:
+        if sys.platform.startswith('win'):
+            sys.stdout.reconfigure(encoding='utf-8')
+            sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+    
+    # ใช้ข้อความภาษาอังกฤษเพื่อหลีกเลี่ยงปัญหา encoding
+    try:
+        print("[INFO] Starting Thai-HandMate Backend...")
+        print("[API] Available at: http://localhost:8000")
+        print("[DOCS] API Documentation: http://localhost:8000/docs")
+        print(f"[KEY] Has API Key: {'YES' if TYPHOON_API_KEY else 'NO (will use fallback)'}")
+    except UnicodeEncodeError:
+        print("[INFO] Starting Thai-HandMate Backend...")
+        print("[API] Available at: http://localhost:8000")
+        print("[DOCS] API Documentation: http://localhost:8000/docs")
+        print(f"[KEY] Has API Key: {'YES' if TYPHOON_API_KEY else 'NO'}")
     
     uvicorn.run(
         "app:app", 
