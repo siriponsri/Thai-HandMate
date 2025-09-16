@@ -35,6 +35,7 @@ export async function loadFaceDetection() {
       })
     })
     
+    
     return true
   } catch (error) {
     console.error('[ERROR] ไม่สามารถโหลด MediaPipe Face Detection ได้:', error)
@@ -114,18 +115,7 @@ export async function detectFace(imageElement) {
       current.confidence > prev.confidence ? current : prev
     )
     
-    // สร้างอารมณ์แบบง่าย (เนื่องจาก MediaPipe ไม่มี emotion detection)
-    const emotions = [
-      { emotion: 'neutral', confidence: 0.8 },
-      { emotion: 'happy', confidence: 0.1 },
-      { emotion: 'sad', confidence: 0.05 },
-      { emotion: 'surprised', confidence: 0.05 }
-    ]
-    
     return {
-      emotion: 'neutral',
-      confidence: bestFace.confidence,
-      allEmotions: emotions,
       faces: faces,
       source: 'mediapipe',
       details: `ตรวจพบ ${faces.length} ใบหน้า, ความมั่นใจ: ${(bestFace.confidence * 100).toFixed(1)}%`
@@ -134,9 +124,6 @@ export async function detectFace(imageElement) {
   } catch (error) {
     console.error('[ERROR] ข้อผิดพลาดในการตรวจจับใบหน้า:', error)
     return {
-      emotion: 'neutral',
-      confidence: 0,
-      allEmotions: [],
       faces: [],
       source: 'error',
       details: error.message

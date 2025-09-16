@@ -8,11 +8,12 @@ export const CONFIG = {
   // เปิดใช้งาน Unknown-first (ครั้งแรกจะได้ Unknown เสมอ)
   UNKNOWN_FIRST: false,  // ปิดเพื่อให้ทำงานจริง
   
-  // พาธโมเดล Teachable Machine (3 โมเดลมือ)
+  // พาธโมเดล Teachable Machine (3 โมเดลมือ + 1 โมเดลอารมณ์)
   MODEL_PATHS: {
     handA: '/models/handA',  // สวัสดี, คิดถึง, น่ารัก, สวย, ชอบ, ไม่ชอบ, รัก, ขอโทษ, idle
     handB: '/models/handB',  // ขอบคุณ, ไม่เป็นไร, สบายดี, โชคดี, เก่ง, อิ่ม, หิว, เศร้า, idle
-    handC: '/models/handC'   // ฉลาด, เป็นห่วง, ไม่สบาย, เข้าใจ, idle
+    handC: '/models/handC',  // ฉลาด, เป็นห่วง, ไม่สบาย, เข้าใจ, idle
+    faceEmotion: '/models/face-emotion'  // angry, disgust, fear, happy, sad, surprised, neutral
   },
   
   // ประเภทโมเดล (สำหรับการเทรนใหม่)
@@ -20,7 +21,8 @@ export const CONFIG = {
     handA: 'image',  // Picture Model
     handB: 'image',  // Picture Model  
     handC: 'image',  // Picture Model
-    face: 'mediapipe' // MediaPipe Face Detection Model
+    face: 'mediapipe', // MediaPipe Face Detection Model
+    faceEmotion: 'image' // Teachable Machine Face Emotion Model
   },
   
   // พาธโมเดล MediaPipe (โหลดจาก CDN)
@@ -54,9 +56,11 @@ export const CONFIG = {
   
   // การตั้งค่า Face Detection
   FACE_DETECTION: {
-    enabled: true,  // เปิดใช้งาน Simple Face Detection
+    enabled: true,  // เปิดใช้งาน Face Detection + Emotion Detection
     minConfidence: 0.5,
-    emotions: ['neutral', 'happy', 'sad', 'surprised', 'angry', 'fear', 'disgust']
+    emotions: ['neutral', 'happy', 'sad', 'surprised', 'angry', 'fear', 'disgust'],
+    useEmotionDetection: true,  // เปิดใช้งาน Emotion Detection (Simple Mode)
+    emotionMode: 'simple'  // ใช้ simple emotion detection
   },
   
   // การตั้งค่า UI

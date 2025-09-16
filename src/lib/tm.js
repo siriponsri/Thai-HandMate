@@ -1,6 +1,8 @@
 // จัดการ Teachable Machine โมเดล
 import * as tmImage from '@teachablemachine/image'
 import { loadFaceDetection, detectFace as mediapipeDetectFace } from './faceDetection.js'
+import { loadFaceEmotionModel, detectFaceEmotion } from './faceEmotionModel.js'
+import { processUnifiedImage, createLLMJson, createAPIJson } from './unifiedProcessor.js'
 import { CONFIG, isValidWord, isValidEmotion } from './config.js'
 
 // ตรวจสอบประเภทโมเดล
@@ -57,6 +59,7 @@ let modelA = null
 let modelB = null
 let modelC = null
 let faceModelsLoaded = false
+let emotionModelsLoaded = false
 let isLoading = false
 let hasShownUnknown = false // ตัวแปรเช็ค Unknown-first
 
@@ -113,13 +116,24 @@ export async function loadModels() {
       faceModelsLoaded = false
     }
     
+    // โหลด Face Emotion Model (Teachable Machine)
+    try {
+      await loadFaceEmotionModel()
+      emotionModelsLoaded = true
+      console.log('[SUCCESS] โหลด Face Emotion Model เสร็จแล้ว')
+    } catch (error) {
+      console.warn('[WARNING] Face Emotion Model โหลดไม่ได้:', error.message)
+      emotionModelsLoaded = false
+    }
+    
     return { 
       success: modelA !== null || modelB !== null || modelC !== null, 
       models: { 
         handA: !!modelA, 
         handB: !!modelB, 
         handC: !!modelC,
-        face: faceModelsLoaded
+        face: faceModelsLoaded,
+        emotion: emotionModelsLoaded
       }
     }
     
@@ -131,7 +145,93 @@ export async function loadModels() {
   }
 }
 
-// เพิ่มฟังก์ชันประมวลผลรวม hand + face
+// เพิ่มฟังก์ชันประมวลผลแบบ async (Hand + Face + Emotion)
+export async function processImageAsync(videoElement) {
+  try {
+    console.log('[INFO] เริ่มประมวลผลภาพแบบ async (Hand + Face + Emotion)...')
+    
+    // ตรวจสอบว่า videoElement มีอยู่จริงหรือไม่
+    if (!videoElement) {
+      throw new Error('ไม่พบ video element')
+    }
+    
+    // ตรวจสอบว่า video element มีข้อมูลหรือไม่
+    if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
+      throw new Error('วิดีโอยังไม่พร้อมใช้งาน')
+    }
+    
+    // รอให้วิดีโอพร้อมใช้งาน
+    if (videoElement.readyState < 2) {
+      console.log('[INFO] รอให้วิดีโอพร้อมใช้งาน...')
+      await new Promise(resolve => {
+        const checkReady = () => {
+          if (videoElement.readyState >= 2) {
+            resolve()
+          } else {
+            setTimeout(checkReady, 100)
+          }
+        }
+        checkReady()
+        setTimeout(resolve, 3000)
+      })
+    }
+    
+    // ประมวลผลแบบ async (parallel)
+    const [handResults, faceResults, emotionResults] = await Promise.allSettled([
+      predictAllModels(videoElement),
+      detectFace(videoElement),
+      detectFaceEmotion(videoElement)
+    ])
+    
+    // จัดการผลลัพธ์
+    const handData = handResults.status === 'fulfilled' ? handResults.value : {
+      word: 'Unknown',
+      confidence: 0,
+      source: 'no-model',
+      allResults: [],
+      details: 'ไม่มีโมเดลมือ'
+    }
+    
+    const faceData = faceResults.status === 'fulfilled' ? faceResults.value : {
+      emotion: 'neutral',
+      confidence: 0,
+      allEmotions: [],
+      faces: [],
+      source: 'error',
+      details: faceResults.reason?.message || 'Face detection failed'
+    }
+    
+    const emotionData = emotionResults.status === 'fulfilled' ? emotionResults.value : {
+      emotion: 'neutral',
+      confidence: 0,
+      allEmotions: [],
+      source: 'error',
+      details: emotionResults.reason?.message || 'Emotion detection failed'
+    }
+    
+    // ใช้ unified processor
+    const unifiedResult = await processUnifiedImage(videoElement, handData, faceData, emotionData)
+    
+    // สร้าง JSON สำหรับ LLM
+    const llmJson = createLLMJson(unifiedResult)
+    const apiJson = createAPIJson(unifiedResult)
+    
+    console.log('[SUCCESS] ประมวลผลภาพแบบ async เสร็จแล้ว:', unifiedResult)
+    console.log('[INFO] LLM JSON:', llmJson)
+    
+    return {
+      ...unifiedResult,
+      llmJson: llmJson,
+      apiJson: apiJson
+    }
+    
+  } catch (error) {
+    console.error('[ERROR] ข้อผิดพลาดในการประมวลผลภาพแบบ async:', error)
+    return createErrorResult(error.message)
+  }
+}
+
+// เพิ่มฟังก์ชันประมวลผลรวม hand + face (backward compatibility)
 export async function processImage(videoElement) {
   try {
     console.log('[INFO] เริ่มประมวลผลภาพ (Hand + Face)...')
@@ -459,4 +559,23 @@ export function getModelStatus() {
 export function resetUnknownFirst() {
   hasShownUnknown = false
   console.log('🔄 รีเซ็ต Unknown-first')
+}
+
+// ฟังก์ชันสร้างผลลัพธ์ error
+function createErrorResult(errorMessage) {
+  return {
+    timestamp: new Date().toISOString(),
+    imageBlob: null,
+    hands: { bestWord: 'Unknown', confidence: 0, source: 'error', allResults: [], details: errorMessage },
+    face: { bestEmotion: 'neutral', confidence: 0, allEmotions: [], faces: [], source: 'error', details: errorMessage },
+    forLLM: { words: [], emotion: 'neutral', wordConfidences: [], emotionConfidences: [] },
+    llmJson: {
+      timestamp: new Date().toISOString(),
+      signLanguage: { words: [], bestWord: 'Unknown', confidence: 0, source: 'error' },
+      emotion: { emotion: 'neutral', confidence: 0, source: 'error' },
+      face: { detected: false, faceCount: 0, confidence: 0 },
+      context: { hasSignLanguage: false, hasEmotion: false, hasFace: false, overallConfidence: 0 }
+    },
+    apiJson: null
+  }
 }

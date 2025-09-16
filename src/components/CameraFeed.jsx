@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react'
-import { predict, loadModels, getModelStatus, processImage } from '../lib/tm.js'
+import { predict, loadModels, getModelStatus, processImage, processImageAsync } from '../lib/tm.js'
 import { CONFIG } from '../lib/config.js'
 
 export default function CameraFeed({ onCapture }) {
@@ -79,10 +79,11 @@ export default function CameraFeed({ onCapture }) {
         const thumbnailUrl = URL.createObjectURL(blob)
         
         try {
-          // ใช้ฟังก์ชันใหม่ที่ประมวลผลทั้ง hand และ face
-          const result = await processImage(video)
+          // ใช้ฟังก์ชันใหม่ที่ประมวลผลแบบ async (Hand + Face + Emotion)
+          const result = await processImageAsync(video)
           
-          console.log('🎯 ผลการประมวลผล (Hand + Face):', result)
+          console.log('🎯 ผลการประมวลผล (Hand + Face + Emotion):', result)
+          console.log('📄 LLM JSON:', result.llmJson)
           
           // ส่งผลไปยัง parent component และ dispatch event
           const captureData = {
@@ -97,7 +98,12 @@ export default function CameraFeed({ onCapture }) {
             // ข้อมูลเพิ่มเติมสำหรับ LLM
             hands: result.hands,
             face: result.face,
-            forLLM: result.forLLM
+            emotion: result.emotion,
+            forLLM: result.forLLM,
+            
+            // JSON สำหรับ LLM
+            llmJson: result.llmJson,
+            apiJson: result.apiJson
           }
           
           if (onCapture) {

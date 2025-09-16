@@ -7,8 +7,9 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
 **คุณสมบัติหลัก:**
 - จดจำภาษามือไทย 23 คำ จาก 3 โมเดล (handA: 9 คำ, handB: 9 คำ, handC: 5 คำ) ด้วย Teachable Machine  
 - ตรวจจับใบหน้าด้วย MediaPipe Face Detection (โหลดจาก CDN)
+- ตรวจจับอารมณ์ 7 แบบด้วย Face Emotion Model (Teachable Machine)
 - สร้างประโยคไทยธรรมชาติด้วย Typhoon-7b LLM รวมกับการวิเคราะห์อารมณ์
-- แสดงค่า confidence score สำหรับทั้งการจดจำมือและการตรวจจับใบหน้า
+- แสดงค่า confidence score สำหรับทั้งการจดจำมือ การตรวจจับใบหน้า และอารมณ์
 - ใช้งานง่ายผ่านเว็บเบราว์เซอร์
 
 ## โมเดลที่ใช้งาน
@@ -22,6 +23,11 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
 - **เทคโนโลยี**: MediaPipe Face Detection (โหลดจาก CDN)
 - **ความสามารถ**: ตรวจจับใบหน้าและคำนวณ confidence score
 - **การแสดงผล**: สถานะการตรวจจับใบหน้า + ค่า confidence percentage
+
+### Face Emotion Detection (Teachable Machine)
+- **เทคโนโลยี**: Teachable Machine Image Model
+- **ความสามารถ**: ตรวจจับอารมณ์ 7 แบบ (angry, disgust, fear, happy, sad, surprised, neutral)
+- **การแสดงผล**: อารมณ์ที่ตรวจพบ + ค่า confidence percentage
 
 ### Backend LLM
 - **โมเดล**: typhoon-7b
@@ -53,7 +59,14 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
    - Export เป็น TensorFlow.js สำหรับแต่ละโปรเจ็กต์
    - ดาวน์โหลดไฟล์ 3 ไฟล์: model.json, metadata.json, weights.bin
 
-2. **วางไฟล์โมเดลใน public/models/**
+2. **สร้าง Face Emotion Model**
+   - ไปที่ https://teachablemachine.withgoogle.com/train/image
+   - สร้าง 7 classes: angry, disgust, fear, happy, sad, surprised, neutral
+   - เก็บข้อมูลภาพแต่ละ class 200-500 ภาพ
+   - Train Model และ Export เป็น TensorFlow.js
+   - ดาวน์โหลดไฟล์ 3 ไฟล์: model.json, metadata.json, weights.bin
+
+3. **วางไฟล์โมเดลใน public/models/**
 
    ```text
    public/
@@ -66,14 +79,17 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
    │   │   ├── model.json
    │   │   ├── metadata.json
    │   │   └── weights.bin
-   │   └── handC/
+   │   ├── handC/
+   │   │   ├── model.json
+   │   │   ├── metadata.json
+   │   │   └── weights.bin
+   │   └── face-emotion/
    │       ├── model.json
    │       ├── metadata.json
    │       └── weights.bin
-   └── face-models/ (ไม่จำเป็น - MediaPipe โหลดจาก CDN)
    ```
 
-3. **Face Detection (ไม่ต้องดาวน์โหลด)**
+4. **Face Detection (ไม่ต้องดาวน์โหลด)**
    - ระบบใช้ MediaPipe Face Detection ที่โหลดจาก CDN อัตโนมัติ
    - ไม่ต้องดาวน์โหลดไฟล์โมเดลเพิ่มเติม
    - ทำงานได้ทันทีเมื่อเปิดเว็บไซต์
@@ -173,7 +189,7 @@ thai-handmate/
 │  │  ├── handA/                  # โมเดล Teachable Machine ชุด A (9 คำ)
 │  │  ├── handB/                  # โมเดล Teachable Machine ชุด B (9 คำ)
 │  │  └── handC/                  # โมเดล Teachable Machine ชุด C (5 คำ)
-│  └── face-models/               # โมเดล face-api.js (ไม่ใช้แล้ว - ใช้ MediaPipe แทน)
+│  └── face-emotion/              # โมเดล Face Emotion (Teachable Machine)
 ├── src/
 │  ├── main.jsx                   # จุดเริ่มต้น React
 │  ├── App.jsx                    # หน้าหลัก
@@ -185,7 +201,9 @@ thai-handmate/
 │  └── lib/
 │     ├── config.js               # การตั้งค่า (โมเดล, API endpoints)
 │     ├── faceDetection.js        # MediaPipe Face Detection
-│     └── tm.js                   # จัดการ Teachable Machine และ Face Detection
+│     ├── faceEmotionModel.js     # Face Emotion Model (Teachable Machine)
+│     ├── unifiedProcessor.js     # รวมผลลัพธ์ Hand + Face + Emotion
+│     └── tm.js                   # จัดการ Teachable Machine Models
 └── backend/
    ├── app.py                     # เซิร์ฟเวอร์ FastAPI พร้อม Typhoon LLM
    ├── api_demo.ipynb            # Jupyter Notebook สำหรับทดสอบ API
@@ -234,15 +252,16 @@ thai-handmate/
 
 ## การเปลี่ยนแปลงล่าสุด
 
-### v2.0 - MediaPipe Integration
-- ✅ **เปลี่ยนจาก face-api.js เป็น MediaPipe Face Detection**
-- ✅ **ลบ simpleFaceDetection.js ที่ไม่ได้ใช้**
-- ✅ **ปรับปรุงการจัดการ face detection ให้มีประสิทธิภาพมากขึ้น**
-- ✅ **อัปเดต configuration ให้ตรงกับ implementation จริง**
-- ✅ **ลดความซับซ้อนในการติดตั้ง (ไม่ต้องดาวน์โหลด face models)**
+### v2.0 - Unified Teachable Machine Architecture
+- ✅ **ใช้ Teachable Machine สำหรับทั้ง Hand และ Face Emotion Models**
+- ✅ **ลบไฟล์ที่ซ้ำซ้อนและไม่จำเป็น**
+- ✅ **ปรับปรุงโครงสร้างโปรเจ็กต์ให้สอดคล้องกัน**
+- ✅ **ใช้ MediaPipe สำหรับ Face Detection เท่านั้น**
+- ✅ **สร้างระบบ Unified Processing สำหรับ Hand + Face + Emotion**
 
-### ข้อดีของ MediaPipe
-- โหลดจาก CDN อัตโนมัติ ไม่ต้องดาวน์โหลดไฟล์โมเดล
-- ประสิทธิภาพดีกว่า face-api.js
-- รองรับการทำงานแบบ real-time ได้ดี
-- มีการอัปเดตและปรับปรุงอย่างต่อเนื่องจาก Google
+### ข้อดีของระบบใหม่
+- ใช้ Teachable Machine สำหรับทั้ง Hand และ Emotion Models
+- โครงสร้างโปรเจ็กต์เรียบร้อย ไม่มีไฟล์ซ้ำซ้อน
+- เข้ากันได้กับ TensorFlow.js เวอร์ชันเดียวกัน
+- ประมวลผลแบบ async สำหรับประสิทธิภาพสูง
+- สร้าง JSON สำหรับ LLM ได้ทันที
