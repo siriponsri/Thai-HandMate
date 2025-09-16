@@ -2,28 +2,29 @@
 ระบบจดจำภาษามือไทย พร้อมสร้างประโยคอัตโนมัติด้วย AI
 
 ## ภาพรวม
-Thai-HandMate เป็นเว็บแอปพลิเคชันที่ใช้กล้องถ่ายภาพมือ จดจำคำภาษามือไทย ตรวจจับอารมณ์จากใบหน้า และสร้างประโยคธรรมชาติด้วย AI 
+Thai-HandMate เป็นเว็บแอปพลิเคชันที่ใช้กล้องถ่ายภาพมือ จดจำคำภาษามือไทย ตรวจจับใบหน้า และสร้างประโยคธรรมชาติด้วย AI 
 
 **คุณสมบัติหลัก:**
 - จดจำภาษามือไทย 23 คำ จาก 3 โมเดล (handA: 9 คำ, handB: 9 คำ, handC: 5 คำ) ด้วย Teachable Machine  
-- ตรวจจับอารมณ์จากใบหน้า 7 แบบ (happy, sad, angry, fearful, disgusted, surprised, neutral) ด้วย face-api.js
-- สร้างประโยคไทยธรรมชาติด้วย Typhoon-v2.1-12b-instruct LLM รวมกับการวิเคราะห์อารมณ์
-- แสดงค่า confidence score สำหรับทั้งการจดจำมือและการตรวจจับอารมณ์
+- ตรวจจับใบหน้าด้วย MediaPipe Face Detection (โหลดจาก CDN)
+- สร้างประโยคไทยธรรมชาติด้วย Typhoon-7b LLM รวมกับการวิเคราะห์อารมณ์
+- แสดงค่า confidence score สำหรับทั้งการจดจำมือและการตรวจจับใบหน้า
 - ใช้งานง่ายผ่านเว็บเบราว์เซอร์
 
 ## โมเดลที่ใช้งาน
 
 ### Hand Gesture Models (Teachable Machine)
-- **handA**: 9 คำ - ขอบคุณ, ยินดี, ตอน, เช้า, สวัสดี, ดีใจ, ที่, ได้, พบ
-- **handB**: 9 คำ - ผม, ฉัน, คุณ, เขา, เธอ, รัก, ชอบ, อยาก, อร่อย  
-- **handC**: 5 คำ - ขอโทษ, ไป, มา, เดิน, วิ่ง
+- **handA**: 9 คำ - สวัสดี, คิดถึง, น่ารัก, สวย, ชอบ, ไม่ชอบ, รัก, ขอโทษ, idle
+- **handB**: 9 คำ - ขอบคุณ, ไม่เป็นไร, สบายดี, โชคดี, เก่ง, อิ่ม, หิว, เศร้า, Idle  
+- **handC**: 5 คำ - ฉลาด, เป็นห่วง, ไม่สบาย, เข้าใจ, idle
 
-### Face Emotion Detection (face-api.js)
-- **7 อารมณ์**: happy, sad, angry, fearful, disgusted, surprised, neutral
-- **แสดงผล**: ชื่ออารมณ์ + ค่า confidence percentage
+### Face Detection (MediaPipe)
+- **เทคโนโลยี**: MediaPipe Face Detection (โหลดจาก CDN)
+- **ความสามารถ**: ตรวจจับใบหน้าและคำนวณ confidence score
+- **การแสดงผล**: สถานะการตรวจจับใบหน้า + ค่า confidence percentage
 
 ### Backend LLM
-- **โมเดล**: typhoon-v2.1-12b-instruct
+- **โมเดล**: typhoon-7b
 - **ความสามารถ**: สร้างประโยคไทยที่สมเหตุสมผลจากคำที่ป้อนและอารมณ์ที่ตรวจพบ
 - **Fallback**: หากไม่มี API key จะใช้การต่อคำแบบง่าย
 
@@ -69,19 +70,13 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
    │       ├── model.json
    │       ├── metadata.json
    │       └── weights.bin
-   └── face-models/
-       ├── tiny_face_detector_model-weights_manifest.json
-       ├── tiny_face_detector_model-shard1
-       ├── face_expression_model-weights_manifest.json
-       └── face_expression_model-shard1
+   └── face-models/ (ไม่จำเป็น - MediaPipe โหลดจาก CDN)
    ```
 
-3. **ดาวน์โหลดไฟล์ face-api.js**
-   - ไปที่ <https://github.com/justadudewhohacks/face-api.js/tree/master/weights>
-   - ดาวน์โหลดไฟล์ 4 ไฟล์:
-     - tiny_face_detector_model-weights_manifest.json และ tiny_face_detector_model-shard1
-     - face_expression_model-weights_manifest.json และ face_expression_model-shard1
-   - วางใน public/face-models/
+3. **Face Detection (ไม่ต้องดาวน์โหลด)**
+   - ระบบใช้ MediaPipe Face Detection ที่โหลดจาก CDN อัตโนมัติ
+   - ไม่ต้องดาวน์โหลดไฟล์โมเดลเพิ่มเติม
+   - ทำงานได้ทันทีเมื่อเปิดเว็บไซต์
 
 ### ขั้นตอนที่ 3: ตั้งค่า Environment Variables
 
@@ -141,10 +136,10 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
 
 1. **เปิดหน้าเว็บ** → จะเห็นกล้องด้านซ้าย และแผงผลลัพธ์ด้านขวา
 2. **ทำท่าภาษามือ** → ระบบจะทำนายแบบ real-time และแสดงผลลัพธ์พร้อม confidence score
-3. **ดูการตรวจจับอารมณ์** → ระบบจะแสดงอารมณ์ที่ตรวจพบจากใบหน้าพร้อม confidence score
-4. **เก็บคำ** → กดปุ่ม "เก็บคำ" เพื่อเพิ่มคำที่ทำนายได้ลงในรายการ
-5. **สร้างประโยค** → กดปุ่ม "สร้างประโยค" เพื่อให้ AI แต่งประโยคจากคำที่เก็บไว้ โดยจะพิจารณาอารมณ์ที่ตรวจพบด้วย
-6. **ล้างรายการ** → กดปุ่ม "ล้างทั้งหมด" เพื่อเริ่มใหม่
+3. **ดูการตรวจจับใบหน้า** → ระบบจะแสดงสถานะการตรวจจับใบหน้าพร้อม confidence score
+4. **ถ่ายภาพ** → กดปุ่ม "ถ่ายภาพ" เพื่อจับภาพและประมวลผลทั้งมือและใบหน้า
+5. **สร้างประโยค** → กดปุ่ม "สร้างประโยค" เพื่อให้ AI แต่งประโยคจากคำที่จับได้ โดยจะพิจารณาอารมณ์ที่ตรวจพบด้วย
+6. **ดูประวัติ** → ดูภาพที่ถ่ายไว้ในแผงด้านขวา
 
 ## ทดสอบ API
 
@@ -178,7 +173,7 @@ thai-handmate/
 │  │  ├── handA/                  # โมเดล Teachable Machine ชุด A (9 คำ)
 │  │  ├── handB/                  # โมเดล Teachable Machine ชุด B (9 คำ)
 │  │  └── handC/                  # โมเดล Teachable Machine ชุด C (5 คำ)
-│  └── face-models/               # โมเดล face-api.js สำหรับตรวจจับอารมณ์
+│  └── face-models/               # โมเดล face-api.js (ไม่ใช้แล้ว - ใช้ MediaPipe แทน)
 ├── src/
 │  ├── main.jsx                   # จุดเริ่มต้น React
 │  ├── App.jsx                    # หน้าหลัก
@@ -189,7 +184,8 @@ thai-handmate/
 │  │  └── StatusBadge.jsx         # แสดงสถานะใบหน้าและอารมณ์
 │  └── lib/
 │     ├── config.js               # การตั้งค่า (โมเดล, API endpoints)
-│     └── tm.js                   # จัดการ Teachable Machine และ face-api.js
+│     ├── faceDetection.js        # MediaPipe Face Detection
+│     └── tm.js                   # จัดการ Teachable Machine และ Face Detection
 └── backend/
    ├── app.py                     # เซิร์ฟเวอร์ FastAPI พร้อม Typhoon LLM
    ├── api_demo.ipynb            # Jupyter Notebook สำหรับทดสอบ API
@@ -213,9 +209,10 @@ thai-handmate/
 
 ### การ์ดแสดง "ใบหน้า: ไม่พร้อม"
 
-- ตรวจสอบไฟล์ face-api.js ใน public/face-models/ (ต้องมี 4 ไฟล์)
+- ตรวจสอบการเชื่อมต่ออินเทอร์เน็ต (MediaPipe โหลดจาก CDN)
 - อนุญาตให้เว็บไซต์เข้าถึงกล้อง
 - ตรวจสอบว่าหน้าเว็บทำงานผ่าน HTTPS หรือ localhost
+- ดู console log ในเบราว์เซอร์ (F12) เพื่อดูข้อผิดพลาด
 
 ### ไม่มี API Key
 
@@ -231,6 +228,21 @@ thai-handmate/
 ## ลิงก์ที่เป็นประโยชน์
 
 - **Teachable Machine**: <https://teachablemachine.withgoogle.com>
-- **face-api.js Models**: <https://github.com/justadudewhohacks/face-api.js>
+- **MediaPipe Face Detection**: <https://developers.google.com/mediapipe/solutions/vision/face_detector>
 - **Typhoon AI**: <https://typhoon.io>
 - **FastAPI Docs**: <https://fastapi.tiangolo.com>
+
+## การเปลี่ยนแปลงล่าสุด
+
+### v2.0 - MediaPipe Integration
+- ✅ **เปลี่ยนจาก face-api.js เป็น MediaPipe Face Detection**
+- ✅ **ลบ simpleFaceDetection.js ที่ไม่ได้ใช้**
+- ✅ **ปรับปรุงการจัดการ face detection ให้มีประสิทธิภาพมากขึ้น**
+- ✅ **อัปเดต configuration ให้ตรงกับ implementation จริง**
+- ✅ **ลดความซับซ้อนในการติดตั้ง (ไม่ต้องดาวน์โหลด face models)**
+
+### ข้อดีของ MediaPipe
+- โหลดจาก CDN อัตโนมัติ ไม่ต้องดาวน์โหลดไฟล์โมเดล
+- ประสิทธิภาพดีกว่า face-api.js
+- รองรับการทำงานแบบ real-time ได้ดี
+- มีการอัปเดตและปรับปรุงอย่างต่อเนื่องจาก Google
