@@ -1,7 +1,56 @@
 // จัดการ Teachable Machine โมเดล
 import * as tmImage from '@teachablemachine/image'
-import * as faceapi from 'face-api.js'
+import { loadFaceDetection, detectFace as mediapipeDetectFace } from './faceDetection.js'
 import { CONFIG, isValidWord, isValidEmotion } from './config.js'
+
+// ตรวจสอบประเภทโมเดล
+function getModelType(modelName) {
+  if (modelName.includes('Hand A')) return CONFIG.MODEL_TYPES.handA
+  if (modelName.includes('Hand B')) return CONFIG.MODEL_TYPES.handB
+  if (modelName.includes('Hand C')) return CONFIG.MODEL_TYPES.handC
+  return 'image' // default
+}
+
+// ฟังก์ชันช่วยสำหรับการทำนายที่ปลอดภัย
+async function safePredict(model, imageElement, modelName) {
+  try {
+    // ตรวจสอบว่า model มีฟังก์ชัน predict หรือไม่
+    if (!model || typeof model.predict !== 'function') {
+      throw new Error(`Model ${modelName} ไม่มีฟังก์ชัน predict`)
+    }
+    
+    // ตรวจสอบว่า imageElement พร้อมใช้งานหรือไม่
+    if (!imageElement || imageElement.readyState < 2) {
+      throw new Error(`Image element ยังไม่พร้อมใช้งาน`)
+    }
+    
+    // ตรวจสอบว่ามีข้อมูลภาพหรือไม่
+    if (imageElement.videoWidth === 0 || imageElement.videoHeight === 0) {
+      throw new Error(`ไม่มีข้อมูลภาพใน video element`)
+    }
+    
+    // ตรวจสอบประเภทโมเดล
+    const modelType = getModelType(modelName)
+    
+    if (modelType === 'image') {
+      // สำหรับ Picture Model - ส่ง video element โดยตรง
+      const predictions = await model.predict(imageElement)
+      
+      // ตรวจสอบว่า predictions เป็น array หรือไม่
+      if (!Array.isArray(predictions)) {
+        throw new Error(`Model ${modelName} ส่งคืนข้อมูลไม่ถูกต้อง`)
+      }
+      
+      return predictions
+    } else {
+      // สำหรับ Pose Model (ถ้ามีในอนาคต)
+      throw new Error(`Model ${modelName} ใช้ประเภท ${modelType} ที่ยังไม่รองรับ`)
+    }
+  } catch (error) {
+    console.warn(`[WARNING] โมเดล ${modelName} ทำนายไม่ได้:`, error.message)
+    return []
+  }
+}
 
 // เก็บโมเดลที่โหลดแล้ว
 let modelA = null
@@ -49,20 +98,19 @@ export async function loadModels() {
       console.warn('[WARNING] โมเดล Hand C โหลดไม่ได้:', error.message)
     }
     
-    // โหลด Face Detection Models
+    // โหลด MediaPipe Face Detection (ถ้าเปิดใช้งาน)
     if (CONFIG.FACE_DETECTION.enabled) {
       try {
-        await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri(CONFIG.FACE_MODEL_PATH),
-          faceapi.nets.faceLandmark68Net.loadFromUri(CONFIG.FACE_MODEL_PATH),
-          faceapi.nets.faceExpressionNet.loadFromUri(CONFIG.FACE_MODEL_PATH)
-        ])
+        await loadFaceDetection()
         faceModelsLoaded = true
-        console.log('[SUCCESS] โหลด Face Detection Models เสร็จแล้ว')
+        console.log('[SUCCESS] โหลด MediaPipe Face Detection เสร็จแล้ว')
       } catch (error) {
-        console.warn('[WARNING] Face Detection Models โหลดไม่ได้:', error.message)
+        console.warn('[WARNING] MediaPipe Face Detection โหลดไม่ได้:', error.message)
         faceModelsLoaded = false
       }
+    } else {
+      console.log('[INFO] Face Detection ปิดใช้งาน')
+      faceModelsLoaded = false
     }
     
     return { 
@@ -88,39 +136,124 @@ export async function processImage(videoElement) {
   try {
     console.log('[INFO] เริ่มประมวลผลภาพ (Hand + Face)...')
     
-    // ประมวลผล Hand Gestures
-    const handResults = await predictAllModels(videoElement)
+    // ตรวจสอบว่า videoElement มีอยู่จริงหรือไม่
+    if (!videoElement) {
+      throw new Error('ไม่พบ video element')
+    }
     
-    // ประมวลผล Face Emotions
-    const faceResults = await detectFace(videoElement)
+    // ตรวจสอบว่า video element มีข้อมูลหรือไม่
+    if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
+      throw new Error('วิดีโอยังไม่พร้อมใช้งาน')
+    }
+    
+    // รอให้วิดีโอพร้อมใช้งาน
+    if (videoElement.readyState < 2) {
+      console.log('[INFO] รอให้วิดีโอพร้อมใช้งาน...')
+      await new Promise(resolve => {
+        const checkReady = () => {
+          if (videoElement.readyState >= 2) {
+            resolve()
+          } else {
+            setTimeout(checkReady, 100) // เช็คทุก 100ms
+          }
+        }
+        checkReady()
+        
+        // timeout 3 วินาที
+        setTimeout(resolve, 3000)
+      })
+    }
+    
+    // ตรวจสอบอีกครั้งว่าวิดีโอพร้อมใช้งาน
+    if (videoElement.readyState < 2) {
+      throw new Error('วิดีโอยังไม่พร้อมใช้งานหลังจากรอแล้ว')
+    }
+    
+    // รอให้วิดีโอมีข้อมูลภาพ
+    if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
+      console.log('[INFO] รอให้วิดีโอมีข้อมูลภาพ...')
+      await new Promise(resolve => {
+        const checkVideoData = () => {
+          if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+            resolve()
+          } else {
+            setTimeout(checkVideoData, 100) // เช็คทุก 100ms
+          }
+        }
+        checkVideoData()
+        
+        // timeout 2 วินาที
+        setTimeout(resolve, 2000)
+      })
+    }
+    
+    // สร้าง canvas เพื่อจับภาพ
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    canvas.width = videoElement.videoWidth
+    canvas.height = videoElement.videoHeight
+    ctx.drawImage(videoElement, 0, 0)
+    
+    // แปลง canvas เป็น blob สำหรับแสดงผล
+    const imageBlob = await new Promise(resolve => {
+      canvas.toBlob(resolve, 'image/jpeg', 0.8)
+    })
+    
+    // ประมวลผล Hand Gestures และ Face Emotions แยกกัน (async)
+    const [handResults, faceResults] = await Promise.allSettled([
+      predictAllModels(videoElement),
+      detectFace(videoElement)
+    ])
+    
+    // จัดการผลลัพธ์ Hand
+    const handData = handResults.status === 'fulfilled' ? handResults.value : {
+      word: 'Unknown',
+      confidence: 0,
+      source: 'no-model',
+      allResults: [],
+      details: 'ไม่มีโมเดลมือ'
+    }
+    
+    // จัดการผลลัพธ์ Face
+    const faceData = faceResults.status === 'fulfilled' ? faceResults.value : {
+      emotion: 'neutral',
+      confidence: 0,
+      allEmotions: [],
+      faces: [],
+      source: 'error',
+      details: faceResults.reason?.message || 'Face detection failed'
+    }
     
     // รวมผลลัพธ์
     const combinedResult = {
       timestamp: new Date().toISOString(),
+      imageBlob: imageBlob, // เพิ่มภาพสำหรับแสดงผล
       
       // ผลลัพธ์ Hand Gestures
       hands: {
-        bestWord: handResults.word,
-        confidence: handResults.confidence,
-        source: handResults.source,
-        allResults: handResults.allResults, // ผลลัพธ์ทั้งหมดจากทุกโมเดล
-        details: handResults.details
+        bestWord: handData.word || 'Unknown',
+        confidence: handData.confidence || 0,
+        source: handData.source || 'no-model',
+        allResults: handData.allResults || [],
+        details: handData.details || 'ไม่สามารถประมวลผลได้'
       },
       
       // ผลลัพธ์ Face Emotions
       face: {
-        bestEmotion: faceResults.emotion,
-        confidence: faceResults.confidence,
-        allEmotions: faceResults.allEmotions, // อารมณ์ทั้งหมดที่ตรวจพบ
-        details: faceResults.details
+        bestEmotion: faceData.emotion || 'neutral',
+        confidence: faceData.confidence || 0,
+        allEmotions: faceData.allEmotions || [],
+        faces: faceData.faces || [],
+        source: faceData.source || 'error',
+        details: faceData.details || 'ไม่สามารถตรวจจับอารมณ์ได้'
       },
       
-      // ข้อมูลสำหรับ LLM (เลือกผลลัพธ์ที่ดีที่สุด)
+      // ข้อมูลสำหรับ LLM
       forLLM: {
-        words: handResults.allResults.filter(r => r.confidence > CONFIG.MIN_CONFIDENCE).map(r => r.word),
-        emotion: faceResults.emotion || 'neutral',
-        wordConfidences: handResults.allResults.filter(r => r.confidence > CONFIG.MIN_CONFIDENCE),
-        emotionConfidences: faceResults.allEmotions || []
+        words: (handData.allResults || []).filter(r => r.confidence > CONFIG.MIN_CONFIDENCE).map(r => r.word),
+        emotion: faceData.emotion || 'neutral',
+        wordConfidences: (handData.allResults || []).filter(r => r.confidence > CONFIG.MIN_CONFIDENCE),
+        emotionConfidences: faceData.allEmotions || []
       }
     }
     
@@ -131,8 +264,9 @@ export async function processImage(videoElement) {
     console.error('[ERROR] ข้อผิดพลาดในการประมวลผลภาพ:', error)
     return {
       timestamp: new Date().toISOString(),
+      imageBlob: null,
       hands: { bestWord: 'Unknown', confidence: 0, source: 'error', allResults: [], details: error.message },
-      face: { bestEmotion: 'neutral', confidence: 0, allEmotions: [], details: error.message },
+      face: { bestEmotion: 'neutral', confidence: 0, allEmotions: [], faces: [], source: 'error', details: error.message },
       forLLM: { words: [], emotion: 'neutral', wordConfidences: [], emotionConfidences: [] }
     }
   }
@@ -167,7 +301,7 @@ async function predictAllModels(imageElement) {
     
     // ทำนายด้วยโมเดล A
     if (modelA) {
-      const predA = await modelA.predict(imageElement)
+      const predA = await safePredict(modelA, imageElement, 'Hand A')
       for (let i = 0; i < predA.length; i++) {
         const className = predA[i].className
         const probability = predA[i].probability
@@ -185,7 +319,7 @@ async function predictAllModels(imageElement) {
     
     // ทำนายด้วยโมเดล B
     if (modelB) {
-      const predB = await modelB.predict(imageElement)
+      const predB = await safePredict(modelB, imageElement, 'Hand B')
       for (let i = 0; i < predB.length; i++) {
         const className = predB[i].className
         const probability = predB[i].probability
@@ -203,7 +337,7 @@ async function predictAllModels(imageElement) {
     
     // ทำนายด้วยโมเดล C
     if (modelC) {
-      const predC = await modelC.predict(imageElement)
+      const predC = await safePredict(modelC, imageElement, 'Hand C')
       for (let i = 0; i < predC.length; i++) {
         const className = predC[i].className
         const probability = predC[i].probability
@@ -278,8 +412,20 @@ export async function predict(imageElement) {
   }
 }
 
-// ตรวจจับใบหน้าและอารมณ์ (ปรับปรุงให้ส่งคืนข้อมูลที่ครบถ้วน)
+// ตรวจจับใบหน้าและอารมณ์ (ใช้ Simple Face Detection)
 export async function detectFace(imageElement) {
+  // ตรวจสอบว่า Face Detection เปิดใช้งานหรือไม่
+  if (!CONFIG.FACE_DETECTION.enabled) {
+    return {
+      emotion: 'neutral',
+      confidence: 0,
+      allEmotions: [],
+      faces: [],
+      source: 'face-detection-disabled',
+      details: 'Face Detection ปิดใช้งาน'
+    }
+  }
+  
   if (!faceModelsLoaded) {
     return {
       emotion: 'neutral',
@@ -287,74 +433,12 @@ export async function detectFace(imageElement) {
       allEmotions: [],
       faces: [],
       source: 'no-face-model',
-      details: 'Face Detection Models ไม่ได้โหลด'
+      details: 'Simple Face Detection ไม่ได้โหลด'
     }
   }
   
-  try {
-    // ตรวจจับใบหน้าและอารมณ์
-    const detections = await faceapi
-      .detectAllFaces(imageElement, new faceapi.TinyFaceDetectorOptions())
-      .withFaceLandmarks()
-      .withFaceExpressions()
-    
-    if (detections.length === 0) {
-      return {
-        emotion: 'neutral',
-        confidence: 0,
-        allEmotions: [],
-        faces: [],
-        source: 'no-face-detected',
-        details: 'ไม่พบใบหน้าในภาพ'
-      }
-    }
-    
-    const results = detections.map((detection, index) => {
-      const expressions = detection.expressions
-      
-      // เรียงลำดับอารมณ์ตาม confidence
-      const sortedEmotions = Object.entries(expressions)
-        .map(([emotion, confidence]) => ({ emotion, confidence }))
-        .sort((a, b) => b.confidence - a.confidence)
-      
-      const topEmotion = sortedEmotions[0]
-      
-      return {
-        faceId: index + 1,
-        box: detection.detection.box,
-        faceConfidence: detection.detection.score,
-        emotion: topEmotion.emotion,
-        emotionConfidence: topEmotion.confidence,
-        allEmotions: sortedEmotions, // ส่งอารมณ์ทั้งหมดเรียงตาม confidence
-        rawExpressions: expressions
-      }
-    })
-    
-    // เลือกใบหน้าที่มี confidence สูงสุด
-    const bestFace = results.reduce((prev, current) => 
-      current.faceConfidence > prev.faceConfidence ? current : prev
-    )
-    
-    return {
-      emotion: bestFace.emotion,
-      confidence: bestFace.emotionConfidence,
-      allEmotions: bestFace.allEmotions, // อารมณ์ทั้งหมดของใบหน้าที่ดีที่สุด
-      faces: results, // ข้อมูลใบหน้าทั้งหมด
-      source: 'face-api',
-      details: `ตรวจพบ ${results.length} ใบหน้า, อารมณ์หลัก: ${bestFace.emotion} (${(bestFace.emotionConfidence * 100).toFixed(1)}%)`
-    }
-    
-  } catch (error) {
-    console.error('[ERROR] ข้อผิดพลาดในการตรวจจับใบหน้า:', error)
-    return {
-      emotion: 'neutral',
-      confidence: 0,
-      allEmotions: [],
-      faces: [],
-      source: 'error',
-      details: error.message
-    }
-  }
+  // ใช้ MediaPipe Face Detection
+  return await mediapipeDetectFace(imageElement)
 }
 
 // ตรวจสอบสถานะโมเดล

@@ -2,8 +2,8 @@
 
 // ค่าคงที่หลัก
 export const CONFIG = {
-  // ค่าความมั่นใจขั้นต่ำ (40%)
-  MIN_CONFIDENCE: 0.40,
+  // ค่าความมั่นใจขั้นต่ำ (50%)
+  MIN_CONFIDENCE: 0.50,
   
   // เปิดใช้งาน Unknown-first (ครั้งแรกจะได้ Unknown เสมอ)
   UNKNOWN_FIRST: false,  // ปิดเพื่อให้ทำงานจริง
@@ -15,14 +15,22 @@ export const CONFIG = {
     handC: '/models/handC'   // ฉลาด, เป็นห่วง, ไม่สบาย, เข้าใจ, idle
   },
   
-  // พาธโมเดล face-api.js
-  FACE_MODEL_PATH: '/face-models',
+  // ประเภทโมเดล (สำหรับการเทรนใหม่)
+  MODEL_TYPES: {
+    handA: 'image',  // Picture Model
+    handB: 'image',  // Picture Model  
+    handC: 'image',  // Picture Model
+    face: 'mediapipe' // MediaPipe Face Detection Model
+  },
   
-  // คำที่โมเดลแต่ละชุดควรจำได้
+  // พาธโมเดล MediaPipe (โหลดจาก CDN)
+  FACE_MODEL_PATH: 'https://cdn.jsdelivr.net/npm/@mediapipe/face_detection',
+  
+  // คำที่โมเดลแต่ละชุดควรจำได้ (ยึดตาม JSON จริง)
   WORD_SETS: {
-    A: ['สวัสดี', 'คิดถึง', 'น่ารัก', 'สวย', 'ชอบ', 'ไม่ชอบ', 'รัก', 'ขอโทษ', 'idle'],
-    B: ['ขอบคุณ', 'ไม่เป็นไร', 'สบายดี', 'โชคดี', 'เก่ง', 'อิ่ม', 'หิว', 'เศร้า', 'idle'],
-    C: ['ฉลาด', 'เป็นห่วง', 'ไม่สบาย', 'เข้าใจ', 'idle']
+    A: ['สวัสดี', 'คิดถึง', 'น่ารัก', 'สวย', 'ชอบ', 'ไม่ชอบ', 'รัก', 'ขอโทษ', 'idle'], // ยังไม่มี JSON
+    B: ['ขอบคุณ', 'ไม่เป็นไร', 'สบายดี', 'โชคดี', 'เก่ง', 'อิ่ม', 'หิว', 'เศร้า', 'Idle'], // ตรงกับ JSON (Idle ตัวใหญ่)
+    C: ['ฉลาด', 'เป็นห่วง', 'ไม่สบาย', 'เข้าใจ', 'idle'] // ตรงกับ JSON
   },
   
   // การตั้งค่า Backend API
@@ -46,7 +54,7 @@ export const CONFIG = {
   
   // การตั้งค่า Face Detection
   FACE_DETECTION: {
-    enabled: true,
+    enabled: true,  // เปิดใช้งาน Simple Face Detection
     minConfidence: 0.5,
     emotions: ['neutral', 'happy', 'sad', 'surprised', 'angry', 'fear', 'disgust']
   },
@@ -65,14 +73,25 @@ export const ALL_WORDS = [...CONFIG.WORD_SETS.A, ...CONFIG.WORD_SETS.B, ...CONFI
 
 // ฟังก์ชันตรวจสอบว่าคำนี้อยู่ในรายการหรือไม่
 export function isValidWord(word) {
-  return ALL_WORDS.includes(word)
+  // รองรับทั้ง 'idle' และ 'Idle' (case insensitive)
+  const normalizedWord = word.toLowerCase()
+  const normalizedWords = ALL_WORDS.map(w => w.toLowerCase())
+  return normalizedWords.includes(normalizedWord)
 }
 
 // ฟังก์ชันหาโมเดลที่ใช้สำหรับคำนั้น
 export function getModelForWord(word) {
-  if (CONFIG.WORD_SETS.A.includes(word)) return 'handA'
-  if (CONFIG.WORD_SETS.B.includes(word)) return 'handB'
-  if (CONFIG.WORD_SETS.C.includes(word)) return 'handC'
+  const normalizedWord = word.toLowerCase()
+  
+  // เช็ค Hand A (ยังไม่มี JSON)
+  if (CONFIG.WORD_SETS.A.some(w => w.toLowerCase() === normalizedWord)) return 'handA'
+  
+  // เช็ค Hand B (มี JSON)
+  if (CONFIG.WORD_SETS.B.some(w => w.toLowerCase() === normalizedWord)) return 'handB'
+  
+  // เช็ค Hand C (มี JSON)
+  if (CONFIG.WORD_SETS.C.some(w => w.toLowerCase() === normalizedWord)) return 'handC'
+  
   return null
 }
 

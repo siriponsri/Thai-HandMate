@@ -20,18 +20,23 @@ export default function RightPanel() {
                    `(${(captureData.face.confidence * 100).toFixed(1)}%)`)
       }
       
-      // เพิ่มคำที่จับได้ (ยกเว้น Unknown)
-      if (captureData.word !== 'Unknown' && captureData.confidence >= CONFIG.MIN_CONFIDENCE) {
-        setCapturedWords(prev => [...prev, captureData])
-        console.log('📝 เพิ่มคำ:', captureData.word, `(${(captureData.confidence * 100).toFixed(1)}%)`)
-        
-        // แสดงข้อมูลเพิ่มเติมถ้ามี
-        if (captureData.hands && captureData.hands.allResults) {
-          console.log('🤏 ผลลัพธ์ทั้งหมด (Hand):', captureData.hands.allResults)
-        }
-        if (captureData.face && captureData.face.allEmotions) {
-          console.log('😊 อารมณ์ทั้งหมด (Face):', captureData.face.allEmotions)
-        }
+      // เพิ่มคำที่จับได้ (รวม Unknown ด้วย)
+      const wordData = {
+        ...captureData,
+        id: Date.now(), // เพิ่ม ID สำหรับ key
+        imageUrl: captureData.imageBlob ? URL.createObjectURL(captureData.imageBlob) : null
+      }
+      
+      setCapturedWords(prev => [...prev, wordData])
+      console.log('📝 เพิ่มคำ:', captureData.hands?.bestWord || 'Unknown', 
+                 `(${((captureData.hands?.confidence || 0) * 100).toFixed(1)}%)`)
+      
+      // แสดงข้อมูลเพิ่มเติมถ้ามี
+      if (captureData.hands && captureData.hands.allResults) {
+        console.log('🤏 ผลลัพธ์ทั้งหมด (Hand):', captureData.hands.allResults)
+      }
+      if (captureData.face && captureData.face.allEmotions) {
+        console.log('😊 อารมณ์ทั้งหมด (Face):', captureData.face.allEmotions)
       }
     }
     
@@ -129,20 +134,30 @@ export default function RightPanel() {
         ) : (
           <div className="space-y-3">
             {capturedWords.map((item, index) => (
-              <div key={index} className="result-item">
-                <img 
-                  src={item.thumbnailUrl} 
-                  alt={item.word}
-                  className="result-thumbnail"
-                />
+              <div key={item.id || index} className="result-item">
+                {item.imageUrl && (
+                  <img 
+                    src={item.imageUrl} 
+                    alt={item.hands?.bestWord || 'Unknown'}
+                    className="result-thumbnail"
+                    style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '8px' }}
+                  />
+                )}
                 <div className="flex-1">
-                  <div className="result-label">{item.word}</div>
-                  <div className="result-confidence">
-                    ความมั่นใจ: {(item.confidence * 100).toFixed(1)}%
+                  <div className="result-label">
+                    {item.hands?.bestWord || 'Unknown'}
                   </div>
-                  {item.details && (
+                  <div className="result-confidence">
+                    ความมั่นใจ: {((item.hands?.confidence || 0) * 100).toFixed(1)}%
+                  </div>
+                  {item.face && item.face.bestEmotion && (
+                    <div className="text-sm text-blue-600">
+                      😊 อารมณ์: {item.face.bestEmotion} ({(item.face.confidence * 100).toFixed(1)}%)
+                    </div>
+                  )}
+                  {item.hands?.details && (
                     <div className="text-sm text-muted-foreground">
-                      {item.details}
+                      {item.hands.details}
                     </div>
                   )}
                 </div>
