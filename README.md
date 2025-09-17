@@ -11,13 +11,14 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
 - สร้างประโยคไทยธรรมชาติด้วย Typhoon-7b LLM รวมกับการวิเคราะห์อารมณ์
 - แสดงค่า confidence score สำหรับทั้งการจดจำมือ การตรวจจับใบหน้า และอารมณ์
 - ใช้งานง่ายผ่านเว็บเบราว์เซอร์
+- รองรับการประมวลผลแบบ async สำหรับประสิทธิภาพสูง
 
 ## โมเดลที่ใช้งาน
 
 ### Hand Gesture Models (Teachable Machine)
-- **handA**: 9 คำ - สวัสดี, คิดถึง, น่ารัก, สวย, ชอบ, ไม่ชอบ, รัก, ขอโทษ, idle
-- **handB**: 9 คำ - ขอบคุณ, ไม่เป็นไร, สบายดี, โชคดี, เก่ง, อิ่ม, หิว, เศร้า, Idle  
-- **handC**: 5 คำ - ฉลาด, เป็นห่วง, ไม่สบาย, เข้าใจ, idle
+- **handA**: 9 คำ - สวัสดี, คิดถึง, น่ารัก, สวย, ชอบ, ไม่ชอบ, รัก, ขอโทษ, idle (ยังไม่มีโมเดล)
+- **handB**: 9 คำ - ขอบคุณ, ไม่เป็นไร, สบายดี, โชคดี, เก่ง, อิ่ม, หิว, เศร้า, Idle (Photo-based, 224x224 RGB)
+- **handC**: 5 คำ - ฉลาด, เป็นห่วง, ไม่สบาย, เข้าใจ, Idle (Embedded Image, 96x96 Grayscale)
 
 ### Face Detection (MediaPipe)
 - **เทคโนโลยี**: MediaPipe Face Detection (โหลดจาก CDN)
@@ -28,6 +29,7 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
 - **เทคโนโลยี**: Teachable Machine Image Model
 - **ความสามารถ**: ตรวจจับอารมณ์ 7 แบบ (angry, disgust, fear, happy, sad, surprised, neutral)
 - **การแสดงผล**: อารมณ์ที่ตรวจพบ + ค่า confidence percentage
+- **Fallback**: หากโมเดลโหลดไม่ได้ จะใช้ Simple Emotion Detection (brightness-based)
 
 ### Backend LLM
 - **โมเดล**: typhoon-7b
@@ -59,31 +61,29 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
    - Export เป็น TensorFlow.js สำหรับแต่ละโปรเจ็กต์
    - ดาวน์โหลดไฟล์ 3 ไฟล์: model.json, metadata.json, weights.bin
 
-2. **สร้าง Face Emotion Model**
+2. **สร้าง Face Emotion Model (ไม่บังคับ)**
    - ไปที่ https://teachablemachine.withgoogle.com/train/image
    - สร้าง 7 classes: angry, disgust, fear, happy, sad, surprised, neutral
    - เก็บข้อมูลภาพแต่ละ class 200-500 ภาพ
    - Train Model และ Export เป็น TensorFlow.js
    - ดาวน์โหลดไฟล์ 3 ไฟล์: model.json, metadata.json, weights.bin
+   - **หมายเหตุ**: หากไม่มีโมเดล ระบบจะใช้ Simple Emotion Detection แทน
 
 3. **วางไฟล์โมเดลใน public/models/**
 
    ```text
    public/
    ├── models/
-   │   ├── handA/
+   │   ├── handA/                    # (ยังไม่มีโมเดล)
+   │   ├── handB/                    # Photo-based, 224x224 RGB
    │   │   ├── model.json
    │   │   ├── metadata.json
    │   │   └── weights.bin
-   │   ├── handB/
+   │   ├── handC/                    # Embedded Image, 96x96 Grayscale
    │   │   ├── model.json
    │   │   ├── metadata.json
    │   │   └── weights.bin
-   │   ├── handC/
-   │   │   ├── model.json
-   │   │   ├── metadata.json
-   │   │   └── weights.bin
-   │   └── face-emotion/
+   │   └── face-emotion/             # (ไม่บังคับ - มี fallback)
    │       ├── model.json
    │       ├── metadata.json
    │       └── weights.bin
@@ -153,9 +153,10 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
 1. **เปิดหน้าเว็บ** → จะเห็นกล้องด้านซ้าย และแผงผลลัพธ์ด้านขวา
 2. **ทำท่าภาษามือ** → ระบบจะทำนายแบบ real-time และแสดงผลลัพธ์พร้อม confidence score
 3. **ดูการตรวจจับใบหน้า** → ระบบจะแสดงสถานะการตรวจจับใบหน้าพร้อม confidence score
-4. **ถ่ายภาพ** → กดปุ่ม "ถ่ายภาพ" เพื่อจับภาพและประมวลผลทั้งมือและใบหน้า
-5. **สร้างประโยค** → กดปุ่ม "สร้างประโยค" เพื่อให้ AI แต่งประโยคจากคำที่จับได้ โดยจะพิจารณาอารมณ์ที่ตรวจพบด้วย
-6. **ดูประวัติ** → ดูภาพที่ถ่ายไว้ในแผงด้านขวา
+4. **ดูการตรวจจับอารมณ์** → ระบบจะแสดงอารมณ์ที่ตรวจพบพร้อม confidence score
+5. **ถ่ายภาพ** → กดปุ่ม "ถ่ายภาพ" เพื่อจับภาพและประมวลผลทั้งมือ ใบหน้า และอารมณ์
+6. **สร้างประโยค** → กดปุ่ม "สร้างประโยค" เพื่อให้ AI แต่งประโยคจากคำที่จับได้ โดยจะพิจารณาอารมณ์ที่ตรวจพบด้วย
+7. **ดูประวัติ** → ดูภาพที่ถ่ายไว้ในแผงด้านขวา
 
 ## ทดสอบ API
 
@@ -258,6 +259,8 @@ thai-handmate/
 - ✅ **ปรับปรุงโครงสร้างโปรเจ็กต์ให้สอดคล้องกัน**
 - ✅ **ใช้ MediaPipe สำหรับ Face Detection เท่านั้น**
 - ✅ **สร้างระบบ Unified Processing สำหรับ Hand + Face + Emotion**
+- ✅ **รองรับการประมวลผลแบบ async สำหรับประสิทธิภาพสูง**
+- ✅ **มี Fallback System สำหรับ Emotion Detection**
 
 ### ข้อดีของระบบใหม่
 - ใช้ Teachable Machine สำหรับทั้ง Hand และ Emotion Models
@@ -265,3 +268,4 @@ thai-handmate/
 - เข้ากันได้กับ TensorFlow.js เวอร์ชันเดียวกัน
 - ประมวลผลแบบ async สำหรับประสิทธิภาพสูง
 - สร้าง JSON สำหรับ LLM ได้ทันที
+- มีระบบ Fallback ที่ทำงานได้แม้ไม่มีโมเดลบางตัว

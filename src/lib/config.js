@@ -32,7 +32,7 @@ export const CONFIG = {
   WORD_SETS: {
     A: ['สวัสดี', 'คิดถึง', 'น่ารัก', 'สวย', 'ชอบ', 'ไม่ชอบ', 'รัก', 'ขอโทษ', 'idle'], // ยังไม่มี JSON
     B: ['ขอบคุณ', 'ไม่เป็นไร', 'สบายดี', 'โชคดี', 'เก่ง', 'อิ่ม', 'หิว', 'เศร้า', 'Idle'], // ตรงกับ JSON (Idle ตัวใหญ่)
-    C: ['ฉลาด', 'เป็นห่วง', 'ไม่สบาย', 'เข้าใจ', 'idle'] // ตรงกับ JSON
+    C: ['ฉลาด', 'เป็นห่วง', 'ไม่สบาย', 'เข้าใจ', 'Idle'] // ตรงกับ JSON (Idle ตัวใหญ่)
   },
   
   // การตั้งค่า Backend API
@@ -61,6 +61,34 @@ export const CONFIG = {
     emotions: ['neutral', 'happy', 'sad', 'surprised', 'angry', 'fear', 'disgust'],
     useEmotionDetection: true,  // เปิดใช้งาน Emotion Detection (Simple Mode)
     emotionMode: 'simple'  // ใช้ simple emotion detection
+  },
+
+  // การตั้งค่าเฉพาะสำหรับแต่ละโมเดล
+  MODEL_CONFIGS: {
+    handA: {
+      inputSize: 224,
+      threshold: 0.7,
+      grayscale: false,
+      description: 'Picture Model - 9 classes'
+    },
+    handB: {
+      inputSize: 224,
+      threshold: 0.7,
+      grayscale: false,
+      description: 'Picture Model - 9 classe'
+    },
+    handC: {
+      inputSize: 96,
+      threshold: 0.7,
+      grayscale: true,
+      description: 'Picture Model - 5 classes'
+    },
+    faceEmotion: {
+      inputSize: 224,
+      threshold: 0.6,
+      grayscale: false,
+      description: 'Face Emotion Model - 7 emotions'
+    }
   },
   
   // การตั้งค่า UI
@@ -125,4 +153,64 @@ export function createTyphoonPayload(capturedData) {
 // ฟังก์ชันตรวจสอบว่าเป็นอารมณ์ที่ถูกต้องหรือไม่
 export function isValidEmotion(emotion) {
   return CONFIG.FACE_DETECTION.emotions.includes(emotion)
+}
+
+// ฟังก์ชันประมวลผลภาพสำหรับแต่ละโมเดล
+export function preprocessImageForModel(imageElement, modelName) {
+  const modelConfig = CONFIG.MODEL_CONFIGS[modelName]
+  if (!modelConfig) {
+    throw new Error(`ไม่พบการตั้งค่าสำหรับโมเดล ${modelName}`)
+  }
+
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  
+  // ตั้งค่าขนาดตามโมเดล
+  canvas.width = modelConfig.inputSize
+  canvas.height = modelConfig.inputSize
+  
+  // วาดภาพ
+  ctx.drawImage(imageElement, 0, 0, modelConfig.inputSize, modelConfig.inputSize)
+  
+  // แปลงเป็น grayscale ถ้าจำเป็น
+  if (modelConfig.grayscale) {
+    const imageData = ctx.getImageData(0, 0, modelConfig.inputSize, modelConfig.inputSize)
+    const data = imageData.data
+    
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
+      data[i] = gray     // Red
+      data[i + 1] = gray // Green
+      data[i + 2] = gray // Blue
+      // Alpha channel remains unchanged
+    }
+    
+    ctx.putImageData(imageData, 0, 0)
+  }
+  
+  return canvas
+}
+
+// ฟังก์ชันกรองผลลัพธ์ตาม threshold
+export function filterPredictionsByThreshold(predictions, modelName) {
+  const modelConfig = CONFIG.MODEL_CONFIGS[modelName]
+  if (!modelConfig) {
+    return predictions
+  }
+  
+  return predictions.filter(p => p.probability >= modelConfig.threshold)
+}
+
+// ฟังก์ชันสร้างข้อมูลโมเดลสำหรับแสดงผล
+export function getModelInfo(modelName) {
+  const modelConfig = CONFIG.MODEL_CONFIGS[modelName]
+  const wordSet = CONFIG.WORD_SETS[modelName.replace('hand', '').toUpperCase()]
+  
+  return {
+    name: modelName,
+    config: modelConfig,
+    words: wordSet || [],
+    path: CONFIG.MODEL_PATHS[modelName],
+    type: CONFIG.MODEL_TYPES[modelName]
+  }
 }

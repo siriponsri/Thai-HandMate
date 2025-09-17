@@ -3,7 +3,7 @@ import * as tmImage from '@teachablemachine/image'
 import { loadFaceDetection, detectFace as mediapipeDetectFace } from './faceDetection.js'
 import { loadFaceEmotionModel, detectFaceEmotion } from './faceEmotionModel.js'
 import { processUnifiedImage, createLLMJson, createAPIJson } from './unifiedProcessor.js'
-import { CONFIG, isValidWord, isValidEmotion } from './config.js'
+import { CONFIG, isValidWord, isValidEmotion, preprocessImageForModel, filterPredictionsByThreshold, getModelInfo } from './config.js'
 
 // ตรวจสอบประเภทโมเดล
 function getModelType(modelName) {
@@ -35,15 +35,21 @@ async function safePredict(model, imageElement, modelName) {
     const modelType = getModelType(modelName)
     
     if (modelType === 'image') {
-      // สำหรับ Picture Model - ส่ง video element โดยตรง
-      const predictions = await model.predict(imageElement)
+      // ประมวลผลภาพตามการตั้งค่าโมเดล
+      const processedImage = preprocessImageForModel(imageElement, modelName)
+      
+      // ทำนายด้วยภาพที่ประมวลผลแล้ว
+      const predictions = await model.predict(processedImage)
       
       // ตรวจสอบว่า predictions เป็น array หรือไม่
       if (!Array.isArray(predictions)) {
         throw new Error(`Model ${modelName} ส่งคืนข้อมูลไม่ถูกต้อง`)
       }
       
-      return predictions
+      // กรองผลลัพธ์ตาม threshold
+      const filteredPredictions = filterPredictionsByThreshold(predictions, modelName)
+      
+      return filteredPredictions
     } else {
       // สำหรับ Pose Model (ถ้ามีในอนาคต)
       throw new Error(`Model ${modelName} ใช้ประเภท ${modelType} ที่ยังไม่รองรับ`)
@@ -553,6 +559,21 @@ export function getModelStatus() {
     hasAnyHandModel: !!(modelA || modelB || modelC),
     allModelsReady: !!(modelA && modelB && modelC && faceModelsLoaded)
   }
+}
+
+// ฟังก์ชันแสดงข้อมูลโมเดลทั้งหมด
+export function getAllModelInfo() {
+  return {
+    handA: getModelInfo('handA'),
+    handB: getModelInfo('handB'),
+    handC: getModelInfo('handC'),
+    faceEmotion: getModelInfo('faceEmotion')
+  }
+}
+
+// ฟังก์ชันแสดงข้อมูลโมเดลเฉพาะ
+export function getModelInfoByName(modelName) {
+  return getModelInfo(modelName)
 }
 
 // รีเซ็ต Unknown-first (สำหรับทดสอบ)
