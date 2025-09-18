@@ -18,11 +18,11 @@ export const CONFIG = {
   
   // ประเภทโมเดล (สำหรับการเทรนใหม่)
   MODEL_TYPES: {
-    handA: 'image',  // Picture Model
-    handB: 'image',  // Picture Model  
-    handC: 'image',  // Picture Model
+    handA: 'pose',  // Pose Model (skeleton tracking)
+    handB: 'pose',  // Pose Model (skeleton tracking)  
+    handC: 'pose',  // Pose Model (skeleton tracking)
     face: 'mediapipe', // MediaPipe Face Detection Model
-    faceEmotion: 'image' // Teachable Machine Face Emotion Model
+    faceEmotion: 'image' // Picture Model (FER2013 dataset)
   },
   
   // พาธโมเดล MediaPipe (โหลดจาก CDN)
@@ -69,25 +69,25 @@ export const CONFIG = {
       inputSize: 224,
       threshold: 0.7,
       grayscale: false,
-      description: 'Picture Model - 9 classes'
+      description: 'Pose Model - 9 gestures (skeleton tracking)'
     },
     handB: {
       inputSize: 224,
       threshold: 0.7,
       grayscale: false,
-      description: 'Picture Model - 9 classe'
+      description: 'Pose Model - 9 gestures (skeleton tracking)'
     },
     handC: {
-      inputSize: 96,
+      inputSize: 224,
       threshold: 0.7,
-      grayscale: true,
-      description: 'Picture Model - 5 classes'
+      grayscale: false,
+      description: 'Pose Model - 5 gestures (skeleton tracking)'
     },
     faceEmotion: {
-      inputSize: 224,
+      inputSize: 48,  // FER2013 standard size
       threshold: 0.6,
-      grayscale: false,
-      description: 'Face Emotion Model - 7 emotions'
+      grayscale: true,  // FER2013 is grayscale
+      description: 'Picture Model - 7 emotions (FER2013)'
     }
   },
   

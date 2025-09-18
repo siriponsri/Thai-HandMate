@@ -1,5 +1,6 @@
 // จัดการ Teachable Machine โมเดล
 import * as tmImage from '@teachablemachine/image'
+import * as tmPose from '@teachablemachine/pose'
 import { loadFaceDetection, detectFace as mediapipeDetectFace } from './faceDetection.js'
 import { loadFaceEmotionModel, detectFaceEmotion } from './faceEmotionModel.js'
 import { processUnifiedImage, createLLMJson, createAPIJson } from './unifiedProcessor.js'
@@ -7,9 +8,10 @@ import { CONFIG, isValidWord, isValidEmotion, preprocessImageForModel, filterPre
 
 // ตรวจสอบประเภทโมเดล
 function getModelType(modelName) {
-  if (modelName.includes('Hand A')) return CONFIG.MODEL_TYPES.handA
-  if (modelName.includes('Hand B')) return CONFIG.MODEL_TYPES.handB
-  if (modelName.includes('Hand C')) return CONFIG.MODEL_TYPES.handC
+  if (modelName.includes('handA') || modelName.includes('Hand A')) return CONFIG.MODEL_TYPES.handA
+  if (modelName.includes('handB') || modelName.includes('Hand B')) return CONFIG.MODEL_TYPES.handB
+  if (modelName.includes('handC') || modelName.includes('Hand C')) return CONFIG.MODEL_TYPES.handC
+  if (modelName.includes('faceEmotion')) return CONFIG.MODEL_TYPES.faceEmotion
   return 'image' // default
 }
 
@@ -50,9 +52,25 @@ async function safePredict(model, imageElement, modelName) {
       const filteredPredictions = filterPredictionsByThreshold(predictions, modelName)
       
       return filteredPredictions
+    } else if (modelType === 'pose') {
+      // สำหรับ Pose Model - ต้องประมวลผลภาพก่อน
+      const processedImage = preprocessImageForModel(imageElement, modelName)
+      
+      // ใช้ tmPose predict
+      const { pose, posenetOutput } = await model.estimatePose(processedImage)
+      const predictions = await model.predict(posenetOutput)
+      
+      // ตรวจสอบว่า predictions เป็น array หรือไม่
+      if (!Array.isArray(predictions)) {
+        throw new Error(`Pose Model ${modelName} ส่งคืนข้อมูลไม่ถูกต้อง`)
+      }
+      
+      // กรองผลลัพธ์ตาม threshold
+      const filteredPredictions = filterPredictionsByThreshold(predictions, modelName)
+      
+      return filteredPredictions
     } else {
-      // สำหรับ Pose Model (ถ้ามีในอนาคต)
-      throw new Error(`Model ${modelName} ใช้ประเภท ${modelType} ที่ยังไม่รองรับ`)
+      throw new Error(`Model ${modelName} ใช้ประเภท ${modelType} ที่ไม่รองรับ`)
     }
   } catch (error) {
     console.warn(`[WARNING] โมเดล ${modelName} ทำนายไม่ได้:`, error.message)
@@ -77,32 +95,32 @@ export async function loadModels() {
     isLoading = true
     console.log('[INFO] เริ่มโหลดโมเดล...')
     
-    // โหลดโมเดล Hand A
+    // โหลดโมเดล Hand A (Pose Model)
     try {
       const modelAUrl = CONFIG.MODEL_PATHS.handA + '/model.json'
       const metadataAUrl = CONFIG.MODEL_PATHS.handA + '/metadata.json'
-      modelA = await tmImage.load(modelAUrl, metadataAUrl)
-      console.log('[SUCCESS] โหลดโมเดล Hand A เสร็จแล้ว')
+      modelA = await tmPose.load(modelAUrl, metadataAUrl)
+      console.log('[SUCCESS] โหลดโมเดล Hand A (Pose) เสร็จแล้ว')
     } catch (error) {
       console.warn('[WARNING] โมเดล Hand A โหลดไม่ได้:', error.message)
     }
     
-    // โหลดโมเดล Hand B
+    // โหลดโมเดล Hand B (Pose Model)
     try {
       const modelBUrl = CONFIG.MODEL_PATHS.handB + '/model.json'
       const metadataBUrl = CONFIG.MODEL_PATHS.handB + '/metadata.json'
-      modelB = await tmImage.load(modelBUrl, metadataBUrl)
-      console.log('[SUCCESS] โหลดโมเดล Hand B เสร็จแล้ว')
+      modelB = await tmPose.load(modelBUrl, metadataBUrl)
+      console.log('[SUCCESS] โหลดโมเดล Hand B (Pose) เสร็จแล้ว')
     } catch (error) {
       console.warn('[WARNING] โมเดล Hand B โหลดไม่ได้:', error.message)
     }
     
-    // โหลดโมเดล Hand C
+    // โหลดโมเดล Hand C (Pose Model)
     try {
       const modelCUrl = CONFIG.MODEL_PATHS.handC + '/model.json'
       const metadataCUrl = CONFIG.MODEL_PATHS.handC + '/metadata.json'
-      modelC = await tmImage.load(modelCUrl, metadataCUrl)
-      console.log('[SUCCESS] โหลดโมเดล Hand C เสร็จแล้ว')
+      modelC = await tmPose.load(modelCUrl, metadataCUrl)
+      console.log('[SUCCESS] โหลดโมเดล Hand C (Pose) เสร็จแล้ว')
     } catch (error) {
       console.warn('[WARNING] โมเดล Hand C โหลดไม่ได้:', error.message)
     }
@@ -237,146 +255,6 @@ export async function processImageAsync(videoElement) {
   }
 }
 
-// เพิ่มฟังก์ชันประมวลผลรวม hand + face (backward compatibility)
-export async function processImage(videoElement) {
-  try {
-    console.log('[INFO] เริ่มประมวลผลภาพ (Hand + Face)...')
-    
-    // ตรวจสอบว่า videoElement มีอยู่จริงหรือไม่
-    if (!videoElement) {
-      throw new Error('ไม่พบ video element')
-    }
-    
-    // ตรวจสอบว่า video element มีข้อมูลหรือไม่
-    if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
-      throw new Error('วิดีโอยังไม่พร้อมใช้งาน')
-    }
-    
-    // รอให้วิดีโอพร้อมใช้งาน
-    if (videoElement.readyState < 2) {
-      console.log('[INFO] รอให้วิดีโอพร้อมใช้งาน...')
-      await new Promise(resolve => {
-        const checkReady = () => {
-          if (videoElement.readyState >= 2) {
-            resolve()
-          } else {
-            setTimeout(checkReady, 100) // เช็คทุก 100ms
-          }
-        }
-        checkReady()
-        
-        // timeout 3 วินาที
-        setTimeout(resolve, 3000)
-      })
-    }
-    
-    // ตรวจสอบอีกครั้งว่าวิดีโอพร้อมใช้งาน
-    if (videoElement.readyState < 2) {
-      throw new Error('วิดีโอยังไม่พร้อมใช้งานหลังจากรอแล้ว')
-    }
-    
-    // รอให้วิดีโอมีข้อมูลภาพ
-    if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
-      console.log('[INFO] รอให้วิดีโอมีข้อมูลภาพ...')
-      await new Promise(resolve => {
-        const checkVideoData = () => {
-          if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
-            resolve()
-          } else {
-            setTimeout(checkVideoData, 100) // เช็คทุก 100ms
-          }
-        }
-        checkVideoData()
-        
-        // timeout 2 วินาที
-        setTimeout(resolve, 2000)
-      })
-    }
-    
-    // สร้าง canvas เพื่อจับภาพ
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-    canvas.width = videoElement.videoWidth
-    canvas.height = videoElement.videoHeight
-    ctx.drawImage(videoElement, 0, 0)
-    
-    // แปลง canvas เป็น blob สำหรับแสดงผล
-    const imageBlob = await new Promise(resolve => {
-      canvas.toBlob(resolve, 'image/jpeg', 0.8)
-    })
-    
-    // ประมวลผล Hand Gestures และ Face Emotions แยกกัน (async)
-    const [handResults, faceResults] = await Promise.allSettled([
-      predictAllModels(videoElement),
-      detectFace(videoElement)
-    ])
-    
-    // จัดการผลลัพธ์ Hand
-    const handData = handResults.status === 'fulfilled' ? handResults.value : {
-      word: 'Unknown',
-      confidence: 0,
-      source: 'no-model',
-      allResults: [],
-      details: 'ไม่มีโมเดลมือ'
-    }
-    
-    // จัดการผลลัพธ์ Face
-    const faceData = faceResults.status === 'fulfilled' ? faceResults.value : {
-      emotion: 'neutral',
-      confidence: 0,
-      allEmotions: [],
-      faces: [],
-      source: 'error',
-      details: faceResults.reason?.message || 'Face detection failed'
-    }
-    
-    // รวมผลลัพธ์
-    const combinedResult = {
-      timestamp: new Date().toISOString(),
-      imageBlob: imageBlob, // เพิ่มภาพสำหรับแสดงผล
-      
-      // ผลลัพธ์ Hand Gestures
-      hands: {
-        bestWord: handData.word || 'Unknown',
-        confidence: handData.confidence || 0,
-        source: handData.source || 'no-model',
-        allResults: handData.allResults || [],
-        details: handData.details || 'ไม่สามารถประมวลผลได้'
-      },
-      
-      // ผลลัพธ์ Face Emotions
-      face: {
-        bestEmotion: faceData.emotion || 'neutral',
-        confidence: faceData.confidence || 0,
-        allEmotions: faceData.allEmotions || [],
-        faces: faceData.faces || [],
-        source: faceData.source || 'error',
-        details: faceData.details || 'ไม่สามารถตรวจจับอารมณ์ได้'
-      },
-      
-      // ข้อมูลสำหรับ LLM
-      forLLM: {
-        words: (handData.allResults || []).filter(r => r.confidence > CONFIG.MIN_CONFIDENCE).map(r => r.word),
-        emotion: faceData.emotion || 'neutral',
-        wordConfidences: (handData.allResults || []).filter(r => r.confidence > CONFIG.MIN_CONFIDENCE),
-        emotionConfidences: faceData.allEmotions || []
-      }
-    }
-    
-    console.log('[SUCCESS] ประมวลผลภาพเสร็จแล้ว:', combinedResult)
-    return combinedResult
-    
-  } catch (error) {
-    console.error('[ERROR] ข้อผิดพลาดในการประมวลผลภาพ:', error)
-    return {
-      timestamp: new Date().toISOString(),
-      imageBlob: null,
-      hands: { bestWord: 'Unknown', confidence: 0, source: 'error', allResults: [], details: error.message },
-      face: { bestEmotion: 'neutral', confidence: 0, allEmotions: [], faces: [], source: 'error', details: error.message },
-      forLLM: { words: [], emotion: 'neutral', wordConfidences: [], emotionConfidences: [] }
-    }
-  }
-}
 
 // ปรับปรุงฟังก์ชัน predict ให้ส่งคืนผลลัพธ์ทั้งหมด
 async function predictAllModels(imageElement) {
@@ -405,9 +283,9 @@ async function predictAllModels(imageElement) {
   try {
     const predictions = []
     
-    // ทำนายด้วยโมเดล A
+    // ทำนายด้วยโมเดล A (Pose)
     if (modelA) {
-      const predA = await safePredict(modelA, imageElement, 'Hand A')
+      const predA = await safePredict(modelA, imageElement, 'handA')
       for (let i = 0; i < predA.length; i++) {
         const className = predA[i].className
         const probability = predA[i].probability
@@ -423,9 +301,9 @@ async function predictAllModels(imageElement) {
       }
     }
     
-    // ทำนายด้วยโมเดล B
+    // ทำนายด้วยโมเดล B (Pose)
     if (modelB) {
-      const predB = await safePredict(modelB, imageElement, 'Hand B')
+      const predB = await safePredict(modelB, imageElement, 'handB')
       for (let i = 0; i < predB.length; i++) {
         const className = predB[i].className
         const probability = predB[i].probability
@@ -441,9 +319,9 @@ async function predictAllModels(imageElement) {
       }
     }
     
-    // ทำนายด้วยโมเดล C
+    // ทำนายด้วยโมเดล C (Pose)
     if (modelC) {
-      const predC = await safePredict(modelC, imageElement, 'Hand C')
+      const predC = await safePredict(modelC, imageElement, 'handC')
       for (let i = 0; i < predC.length; i++) {
         const className = predC[i].className
         const probability = predC[i].probability

@@ -15,18 +15,29 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
 
 ## โมเดลที่ใช้งาน
 
-### Hand Gesture Models (Teachable Machine)
-- **handA**: 9 คำ - สวัสดี, คิดถึง, น่ารัก, สวย, ชอบ, ไม่ชอบ, รัก, ขอโทษ, idle (ยังไม่มีโมเดล)
-- **handB**: 9 คำ - ขอบคุณ, ไม่เป็นไร, สบายดี, โชคดี, เก่ง, อิ่ม, หิว, เศร้า, Idle (Photo-based, 224x224 RGB)
-- **handC**: 5 คำ - ฉลาด, เป็นห่วง, ไม่สบาย, เข้าใจ, Idle (Embedded Image, 96x96 Grayscale)
+### Hand Gesture Models (Teachable Machine Pose)
+- **Hand A**: 9 คำ - สวัสดี, คิดถึง, น่ารัก, สวย, ชอบ, ไม่ชอบ, รัก, ขอโทษ, idle
+  - **Model Type**: Pose Model (Skeleton Tracking)
+  - **Training**: ท่าทางภาษามือจากทีมงาน
+  - **Keypoints**: 17 skeleton points
+- **Hand B**: 9 คำ - ขอบคุณ, ไม่เป็นไร, สบายดี, โชคดี, เก่ง, อิ่ม, หิว, เศร้า, Idle
+  - **Model Type**: Pose Model (Skeleton Tracking)
+  - **Training**: ท่าทางภาษามือจากทีมงาน
+  - **Keypoints**: 17 skeleton points
+- **Hand C**: 5 คำ - ฉลาด, เป็นห่วง, ไม่สบาย, เข้าใจ, Idle
+  - **Model Type**: Pose Model (Skeleton Tracking)
+  - **Training**: ท่าทางภาษามือจากทีมงาน
+  - **Keypoints**: 17 skeleton points
 
 ### Face Detection (MediaPipe)
 - **เทคโนโลยี**: MediaPipe Face Detection (โหลดจาก CDN)
 - **ความสามารถ**: ตรวจจับใบหน้าและคำนวณ confidence score
 - **การแสดงผล**: สถานะการตรวจจับใบหน้า + ค่า confidence percentage
 
-### Face Emotion Detection (Teachable Machine)
-- **เทคโนโลยี**: Teachable Machine Image Model
+### Face Emotion Detection (Teachable Machine Picture)
+- **Model Type**: Picture Model (Standard Image)
+- **Training Dataset**: FER2013 (35,887 emotion images)
+- **Input**: 48x48 grayscale images
 - **ความสามารถ**: ตรวจจับอารมณ์ 7 แบบ (angry, disgust, fear, happy, sad, surprised, neutral)
 - **การแสดงผล**: อารมณ์ที่ตรวจพบ + ค่า confidence percentage
 - **Fallback**: หากโมเดลโหลดไม่ได้ จะใช้ Simple Emotion Detection (brightness-based)
@@ -253,19 +264,69 @@ thai-handmate/
 
 ## การเปลี่ยนแปลงล่าสุด
 
+### v2.2 - Hybrid Model Architecture
+- ✅ **Hand Models ใช้ Pose Tracking** - ตรวจจับ skeleton 17 keypoints
+- ✅ **Face Emotion ใช้ Picture Model** - train จาก FER2013 dataset
+- ✅ **รองรับทั้ง Pose และ Image Models** - ในระบบเดียวกัน
+- ✅ **Input เดียวสำหรับทุกโมเดล** - รับ image capture จาก user
+
+### v2.1 - Clean Architecture Update
+- ✅ **ลบไฟล์ที่ไม่จำเป็น** - demo notebooks, cache, duplicate scripts
+- ✅ **จัดระเบียบโครงสร้าง** - ลบฟังก์ชันซ้ำซ้อนใน tm.js
+- ✅ **ปรับปรุง dependencies** - ลบ package ที่ไม่ได้ใช้
+- ✅ **สร้าง README สำหรับแต่ละโมเดล** - คำแนะนำชัดเจน
+- ✅ **รวมเอกสารใน README หลัก** - ครบถ้วนในที่เดียว
+
 ### v2.0 - Unified Teachable Machine Architecture
 - ✅ **ใช้ Teachable Machine สำหรับทั้ง Hand และ Face Emotion Models**
-- ✅ **ลบไฟล์ที่ซ้ำซ้อนและไม่จำเป็น**
-- ✅ **ปรับปรุงโครงสร้างโปรเจ็กต์ให้สอดคล้องกัน**
 - ✅ **ใช้ MediaPipe สำหรับ Face Detection เท่านั้น**
 - ✅ **สร้างระบบ Unified Processing สำหรับ Hand + Face + Emotion**
 - ✅ **รองรับการประมวลผลแบบ async สำหรับประสิทธิภาพสูง**
 - ✅ **มี Fallback System สำหรับ Emotion Detection**
 
 ### ข้อดีของระบบใหม่
-- ใช้ Teachable Machine สำหรับทั้ง Hand และ Emotion Models
+- **Pose Models สำหรับมือ** - ไม่ขึ้นกับพื้นหลัง แม่นยำกว่า
+- **Picture Model สำหรับอารมณ์** - เหมาะกับ FER2013 grayscale dataset
+- **Input เดียว** - รับภาพจาก camera แล้วประมวลผลตามที่แต่ละโมเดลต้องการ
 - โครงสร้างโปรเจ็กต์เรียบร้อย ไม่มีไฟล์ซ้ำซ้อน
 - เข้ากันได้กับ TensorFlow.js เวอร์ชันเดียวกัน
-- ประมวลผลแบบ async สำหรับประสิทธิภาพสูง
+- ประมวลผลแบบ async เพิ่มความเร็ว 3x
 - สร้าง JSON สำหรับ LLM ได้ทันที
 - มีระบบ Fallback ที่ทำงานได้แม้ไม่มีโมเดลบางตัว
+
+## Backend API
+
+### การตั้งค่า Backend
+1. ติดตั้ง Python dependencies:
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   ```
+
+2. สร้างไฟล์ `.env` ใน `backend/`:
+   ```env
+   # Typhoon API (หรือ LLM อื่นๆ)
+   TYPHOON_API_KEY=your_api_key_here
+   ```
+
+3. รัน Backend:
+   ```bash
+   python app.py
+   ```
+
+### API Endpoints
+- `GET /api/health` - ตรวจสอบสถานะ API
+- `POST /api/generate` - สร้างประโยคจากภาษามือและอารมณ์
+
+### การใช้งาน API
+```javascript
+// ตัวอย่างการเรียกใช้ API
+const response = await fetch('http://localhost:8000/api/generate', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    words: ['สวัสดี', 'ขอบคุณ'],
+    emotion: 'happy'
+  })
+});
+```

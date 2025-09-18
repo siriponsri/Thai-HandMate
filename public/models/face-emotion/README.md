@@ -1,22 +1,37 @@
-# Face Emotion Model (Teachable Machine)
+# Face Emotion Model (Picture - FER2013)
 
-## โมเดลตรวจจับอารมณ์จากใบหน้า
+## อารมณ์ที่รองรับ (7 อารมณ์)
+- angry
+- disgust
+- fear
+- happy
+- sad
+- surprised
+- neutral
 
-### ไฟล์ที่ต้องมี:
-- `model.json` - โครงสร้างโมเดล
-- `metadata.json` - ข้อมูลเมตาดาต้า
-- `weights.bin` - น้ำหนักของโมเดล
-
-### วิธีการสร้าง:
-1. ไปที่ https://teachablemachine.withgoogle.com/train/image
-2. สร้าง Image Project
-3. สร้าง 7 classes: angry, disgust, fear, happy, sad, surprised, neutral
-4. เก็บข้อมูลภาพแต่ละ class 200-500 ภาพ
+## วิธีการเทรนโมเดล
+1. ไปที่ [Teachable Machine](https://teachablemachine.withgoogle.com/train/image)
+2. เลือก **Image Project** (Standard Image Model)
+3. สร้าง 7 Classes ตามอารมณ์ด้านบน
+4. นำเข้าภาพจาก FER2013 dataset:
+   - Download FER2013 dataset จาก [Kaggle](https://www.kaggle.com/datasets/msambare/fer2013)
+   - แยกภาพตาม emotion label (0=Angry, 1=Disgust, 2=Fear, 3=Happy, 4=Sad, 5=Surprise, 6=Neutral)
+   - Upload ภาพอย่างน้อย 200-500 ภาพต่ออารมณ์
 5. Train Model
-6. Export เป็น TensorFlow.js
-7. วางไฟล์ 3 ไฟล์ในโฟลเดอร์นี้
+6. Export เป็น **TensorFlow.js** format
+7. วางไฟล์ 3 ไฟล์ในโฟลเดอร์นี้:
+   - `model.json`
+   - `metadata.json`
+   - `weights.bin`
 
-### การใช้งาน:
-- โมเดลจะถูกโหลดโดย `faceEmotionModel.js`
-- ใช้ร่วมกับ `unifiedProcessor.js`
-- ส่งผลลัพธ์เป็น JSON สำหรับ LLM
+## การตั้งค่า
+- Model Type: **Picture Model** (Standard Image)
+- Input Size: 48x48 (FER2013 standard)
+- Image Type: Grayscale
+- Confidence Threshold: 0.6
+- Dataset: FER2013 (35,887 images)
+
+## หมายเหตุ
+- FER2013 เป็น dataset มาตรฐานสำหรับ emotion recognition
+- ภาพทั้งหมดเป็น grayscale ขนาด 48x48 pixels
+- ถ้าไม่มีโมเดล ระบบจะใช้ Simple Emotion Detection แทน (fallback)
