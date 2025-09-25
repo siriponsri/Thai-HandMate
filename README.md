@@ -81,12 +81,52 @@ thai-handmate/
 └── README.md                      # เอกสารโปรเจกต์
 ```
 
-## ระบบการทำงาน
+## User Workflow
 
-### 1. Frontend (React + Vite)
-- **CameraFeed.jsx**: จัดการกล้อง, ถ่ายภาพ, อัปโหลดรูป
-- **RightPanel.jsx**: แสดงผลลัพธ์, ประวัติ, สร้างประโยค
-- **StatusBadge.jsx**: แสดงสถานะการโหลดโมเดล
+### 1. เริ่มต้นใช้งาน
+1. **เปิดเว็บแอป** → ระบบจะเริ่มโหลดโมเดลอัตโนมัติ
+2. **อนุญาตกล้อง** → กล้องจะเริ่มทำงานและแสดงวิดีโอ
+3. **รอโมเดลโหลด** → แสดงสถานะ "✅ ทุกโมเดลพร้อม (2/2)"
+
+### 2. การจดจำภาษามือ
+1. **ทำท่าภาษามือ** → ระบบจะประมวลผลแบบ real-time
+2. **ดูผลลัพธ์** → แสดงคำที่จับได้พร้อม confidence score
+3. **ดูกรอบใบหน้า** → แสดงกรอบสีเขียวรอบใบหน้าที่ตรวจพบ
+4. **ดูอารมณ์** → แสดงอารมณ์ที่ตรวจพบพร้อม confidence
+
+### 3. การถ่ายภาพและสร้างประโยค
+1. **กดปุ่ม "ถ่ายภาพ"** → จับภาพจากกล้อง
+2. **กดปุ่ม "อัปโหลดภาพ"** → อัปโหลดรูปจากเครื่อง
+3. **ดูประวัติ** → ภาพที่จับได้จะแสดงในแผงด้านขวา
+4. **กดปุ่ม "สร้างประโยค"** → AI จะสร้างประโยคไทยจากคำและอารมณ์
+
+### 4. การแสดงผล
+- **แผงซ้าย**: กล้อง, ปุ่มถ่ายภาพ/อัปโหลด
+- **แผงขวา**: ผลลัพธ์, ประวัติ, ปุ่มสร้างประโยค
+- **สถานะ**: แสดงสถานะโมเดลและความมั่นใจ
+
+## Code Structure
+
+### 1. Frontend Architecture (React + Vite)
+```
+src/
+├── components/                 # UI Components
+│   ├── CameraFeed.jsx         # กล้อง, ถ่ายภาพ, อัปโหลด
+│   ├── RightPanel.jsx         # แผงผลลัพธ์, ประวัติ, สร้างประโยค
+│   └── StatusBadge.jsx        # แสดงสถานะโมเดล
+├── lib/                       # Core Libraries
+│   ├── tm.js                  # Main API for model operations
+│   ├── tfInit.js              # TensorFlow.js initialization
+│   ├── modelLoader.js         # Model loading system
+│   ├── imageProcessor.js      # Image preprocessing
+│   ├── predictor.js           # Model prediction
+│   ├── processor.js           # Processing controller
+│   ├── unifiedProcessor.js    # Result unification
+│   └── config.js              # Configuration settings
+├── App.jsx                    # Main App Component
+├── main.jsx                   # React Entry Point
+└── styles.css                 # Global Styles
+```
 
 ### 2. Model Loading System
 - **tfInit.js**: เริ่มต้น TensorFlow.js backend (WebGL/WASM/CPU)
@@ -104,6 +144,47 @@ thai-handmate/
 - **app.py**: FastAPI server สำหรับสร้างประโยค
 - **Typhoon LLM**: สร้างประโยคไทยจากคำและอารมณ์
 - **Rate Limiting**: จำกัดการเรียกใช้ API
+
+## Datasets
+
+### 1. Hand Gesture Dataset
+- **แหล่งที่มา**: Teachable Machine Image Model
+- **จำนวนคำ**: 9 คำ (เริ่ม, เรียนรู้, AI, อย่างไร, ช่วยเหลือ, ไม่ใช่, หยุด, ถัดไป, สถานะว่าง)
+- **จำนวนภาพ**: 50-100 samples ต่อคำ
+- **รูปแบบ**: RGB images, 224x224 pixels
+- **การแบ่งข้อมูล**: 80% training, 20% validation
+- **การเพิ่มข้อมูล**: Rotation, brightness, contrast augmentation
+
+### 2. Face Expression Dataset
+- **แหล่งที่มา**: Custom TensorFlow.js Model
+- **จำนวนอารมณ์**: 7 อารมณ์ (angry, disgust, fear, happy, neutral, sad, surprised)
+- **รูปแบบ**: Grayscale images, 48x48 pixels
+- **สถาปัตยกรรม**: Conv2D + Dense layers
+- **การเพิ่มข้อมูล**: Grayscale conversion, normalization
+
+### 3. Thai Language Dataset
+- **แหล่งที่มา**: Typhoon LLM (typhoon-v2.1-12b-instruct)
+- **ภาษา**: ไทย
+- **ประเภท**: Text generation, sentence construction
+- **การใช้งาน**: สร้างประโยคจากคำและอารมณ์
+- **Rate Limiting**: 10 requests/minute
+
+### 4. Model Files
+```
+public/
+├── hand-model/                  # Hand Gesture Model
+│   ├── model.json              # Model topology
+│   ├── weights.bin             # Model weights
+│   └── metadata.json           # Model metadata
+└── face-model/                  # Face Expression Model
+    ├── model.json              # Model topology
+    ├── weights.bin             # Combined weights
+    ├── group1-shard1of5.bin    # Weight shard 1
+    ├── group1-shard2of5.bin    # Weight shard 2
+    ├── group1-shard3of5.bin    # Weight shard 3
+    ├── group1-shard4of5.bin    # Weight shard 4
+    └── group1-shard5of5.bin    # Weight shard 5
+```
 
 ## การรันโปรเจกต์
 
