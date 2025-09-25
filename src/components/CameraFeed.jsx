@@ -8,7 +8,7 @@ export default function CameraFeed({ onCapture }) {
   const fileInputRef = useRef(null)
   const [stream, setStream] = useState(null)
   const [isCapturing, setIsCapturing] = useState(false)
-  const [modelStatus, setModelStatus] = useState({ hasAnyModel: false, isLoading: false })
+  const [modelStatus, setModelStatus] = useState({ hand: false, face: false, initialized: false, isLoading: false })
   const [faceDetections, setFaceDetections] = useState([])
   const [uploadedImage, setUploadedImage] = useState(null)
   
@@ -247,7 +247,8 @@ export default function CameraFeed({ onCapture }) {
   
   return (
     <div className="card">
-      <div className="camera-container" style={{ position: 'relative' }}>
+      {/* ส่วนกล้อง */}
+      <div className="camera-container" style={{ position: 'relative', marginBottom: '1rem' }}>
         {/* วิดีโอ */}
         <video
           ref={videoRef}
@@ -303,74 +304,72 @@ export default function CameraFeed({ onCapture }) {
           </div>
         ))}
         
-        {/* Input file ซ่อน */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          onChange={handleFileUpload}
-          style={{ display: 'none' }}
-        />
-        
-        {/* ปุ่มถ่ายภาพและอัปโหลด */}
-        <div style={{ 
-          position: 'absolute', 
-          bottom: '1rem', 
-          left: '50%', 
-          transform: 'translateX(-50%)',
-          display: 'flex',
-          gap: '1rem'
-        }}>
-          <button
-            className={`btn ${isCapturing ? 'btn-secondary' : 'btn-primary'}`}
-            onClick={handleCapture}
-            disabled={isCapturing || uploadedImage}
-            style={{ minWidth: '120px' }}
-          >
-            {isCapturing ? (
-              <>
-                <span className="loading"></span>
-                <span style={{ marginLeft: '0.5rem' }}>จับภาพ...</span>
-              </>
-            ) : (
-              '📸 ถ่ายภาพ'
-            )}
-          </button>
-          
-          <button
-            className="btn btn-accent"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isCapturing}
-            style={{ minWidth: '120px' }}
-          >
-            📁 อัปโหลดภาพ
-          </button>
-          
-          {uploadedImage && (
-            <button
-              className="btn btn-secondary"
-              onClick={() => {
-                setUploadedImage(null)
-                setFaceDetections([])
-              }}
-            >
-              ❌ ล้าง
-            </button>
-          )}
-        </div>
-        
         {/* แสดงสถานะโมเดล */}
         <div style={{ 
           position: 'absolute', 
           top: '1rem', 
           left: '1rem'
         }}>
-          <div className={`badge ${modelStatus.hasAnyModel ? 'badge-success' : 'badge-warning'}`}>
+          <div className={`badge ${(modelStatus.hand || modelStatus.face) ? 'badge-success' : 'badge-warning'}`}>
             {modelStatus.isLoading ? '⏳ โหลดโมเดล...' : 
-             modelStatus.hasAnyModel ? '✅ โมเดลพร้อม' : '⚠️ ไม่มีโมเดล'}
+             (modelStatus.hand || modelStatus.face) ? '✅ โมเดลพร้อม' : '⚠️ ไม่มีโมเดล'}
           </div>
         </div>
       </div>
+      
+      {/* ส่วนปุ่ม - ย้ายออกมานอกกรอบกล้อง */}
+      <div style={{ 
+        display: 'flex',
+        gap: '1rem',
+        justifyContent: 'center',
+        flexWrap: 'wrap'
+      }}>
+        <button
+          className={`btn ${isCapturing ? 'btn-secondary' : 'btn-primary'}`}
+          onClick={handleCapture}
+          disabled={isCapturing || uploadedImage}
+          style={{ minWidth: '120px' }}
+        >
+          {isCapturing ? (
+            <>
+              <span className="loading"></span>
+              <span style={{ marginLeft: '0.5rem' }}>จับภาพ...</span>
+            </>
+          ) : (
+            '📸 ถ่ายภาพ'
+          )}
+        </button>
+        
+        <button
+          className="btn btn-accent"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isCapturing}
+          style={{ minWidth: '120px' }}
+        >
+          📁 อัปโหลดภาพ
+        </button>
+        
+        {uploadedImage && (
+          <button
+            className="btn btn-secondary"
+            onClick={() => {
+              setUploadedImage(null)
+              setFaceDetections([])
+            }}
+          >
+            ❌ ล้าง
+          </button>
+        )}
+      </div>
+      
+      {/* Input file ซ่อน */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFileUpload}
+        style={{ display: 'none' }}
+      />
     </div>
   )
 }

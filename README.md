@@ -6,8 +6,8 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
 
 **คุณสมบัติหลัก:**
 - จดจำภาษามือไทย 9 คำ ด้วย TensorFlow.js (Teachable Machine)
-- ตรวจจับใบหน้าด้วย face-api.js (SSD MobileNet)
-- ตรวจจับอารมณ์ 7 แบบด้วย face-api.js Expression Model
+- ตรวจจับใบหน้าด้วย TensorFlow.js (Simple Brightness Detection)
+- ตรวจจับอารมณ์ 7 แบบด้วย TensorFlow.js (Custom Face Model)
 - สร้างประโยคไทยธรรมชาติด้วย Typhoon LLM รวมกับการวิเคราะห์อารมณ์
 - รองรับการอัปโหลดรูปภาพและถ่ายภาพจากกล้อง
 - แสดงกรอบ Face Detection แบบ real-time
@@ -25,11 +25,11 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
   - **Architecture**: MobileNetV2 + Dense layers
   - **Preprocessing**: Resize → Normalize [0,1] → Flatten (for Dense) or 4D (for Conv2D)
 
-### Face Detection & Emotion (face-api.js)
-- **Face Detection**: SSD MobileNet v1
-- **Face Landmarks**: 68-point facial landmarks
+### Face Detection & Emotion (TensorFlow.js)
+- **Face Detection**: Simple Brightness Detection (Fallback)
 - **Face Expression**: 7 emotions (angry, disgust, fear, happy, neutral, sad, surprised)
-- **Input Resolution**: 224x224 pixels RGB
+- **Input Resolution**: 48x48 pixels Grayscale
+- **Architecture**: Conv2D + Dense layers
 - **Confidence Threshold**: 0.5
 
 ### Backend LLM
@@ -57,16 +57,15 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
 
 ### ขั้นตอนที่ 2: เตรียมไฟล์โมเดล
 
-1. **สร้าง Hand Model (Teachable Machine)**
+1. **Hand Model (Teachable Machine)**
    - ไปที่ https://teachablemachine.withgoogle.com/train/image
    - สร้าง Image Model สำหรับ 9 คำ: เริ่ม, เรียนรู้, AI, อย่างไร, ช่วยเหลือ, ไม่ใช่, หยุด, ถัดไป, สถานะว่าง
    - เก็บข้อมูลภาพแต่ละคำ 50-100 samples
    - Export เป็น TensorFlow.js Model
    - ดาวน์โหลดไฟล์: model.json, weights.bin
 
-2. **Face Models (face-api.js)**
-   - ระบบจะดาวน์โหลดอัตโนมัติจาก face-api.js repository
-   - ไม่ต้องดาวน์โหลดเพิ่มเติม
+2. **Face Model (TensorFlow.js)**
+   - ระบบใช้ TensorFlow.js LayersModel สำหรับ face detection และ emotion
    - ไฟล์จะถูกเก็บใน public/face-model/
 
 3. **วางไฟล์โมเดลใน public/**
@@ -76,13 +75,9 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
    ├── hand-model/                   # Hand Model (Teachable Machine)
    │   ├── model.json
    │   └── weights.bin
-   └── face-model/                   # Face Models (face-api.js)
-       ├── ssd_mobilenetv1_model-weights_manifest.json
-       ├── ssd_mobilenetv1_model-shard1.bin
-       ├── face_landmark_68_model-weights_manifest.json
-       ├── face_landmark_68_model-shard1.bin
-       ├── face_expression_model-weights_manifest.json
-       └── face_expression_model-shard1.bin
+   └── face-model/                   # Face Model (TensorFlow.js)
+       ├── model.json
+       └── weights.bin
    ```
 
 ### ขั้นตอนที่ 3: ตั้งค่า Environment Variables
@@ -115,14 +110,8 @@ Thai-HandMate เป็นเว็บแอปพลิเคชันที่
 
    **วิธีที่ 1: รัน command เดียว (แนะนำ)**
    ```bash
-   # Windows
-   start.bat
-   
-   # หรือใช้ npm
+   # รันทั้ง Frontend และ Backend พร้อมกัน
    npm run start
-   
-   # Linux/Mac
-   ./start.sh
    ```
    
    **วิธีที่ 2: รันแยกกัน**

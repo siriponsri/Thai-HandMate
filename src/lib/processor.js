@@ -1,6 +1,6 @@
 // Main Processing Loop - ควบคุมจังหวะและป้องกัน overload
 import { initTF } from './tfInit.js'
-import { loadAllModels, getHandModel, isFaceModelsReady } from './modelLoader.js'
+import { loadAllModels, getHandModel, getFaceModel, isFaceModelReady } from './modelLoader.js'
 import { predictHand, detectFaceAndEmotion, validatePredictionResult } from './predictor.js'
 
 let isProcessing = false
@@ -84,7 +84,8 @@ export async function processImageAsync(imageElement) {
     const handResult = await predictHand(imageElement, handModel)
     
     // 2. Face Detection และ Emotion
-    const faceResult = await detectFaceAndEmotion(imageElement)
+    const faceModel = getFaceModel()
+    const faceResult = await detectFaceAndEmotion(imageElement, faceModel)
     
     // 3. สร้าง emotion result แยก
     const emotionResult = {

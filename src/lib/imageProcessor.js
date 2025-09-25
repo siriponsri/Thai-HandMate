@@ -2,7 +2,7 @@
 import * as tf from '@tensorflow/tfjs'
 
 
-// Preprocess สำหรับ Face Expression Model (48x48 RGB, float32 [0..1])
+// Preprocess สำหรับ Face Expression Model (48x48 Grayscale, float32 [0..1])
 export function preprocessForFaceModel(imageElement) {
   return tf.tidy(() => {
     // แปลงเป็น tensor
@@ -11,13 +11,19 @@ export function preprocessForFaceModel(imageElement) {
     // Resize เป็น 48x48
     tensor = tf.image.resizeBilinear(tensor, [48, 48])
     
+    // แปลงเป็น grayscale (RGB → Grayscale) - ใช้วิธี manual
+    // ใช้สูตร: 0.299*R + 0.587*G + 0.114*B
+    const [r, g, b] = tf.split(tensor, 3, 2)
+    const grayscale = r.mul(0.299).add(g.mul(0.587)).add(b.mul(0.114))
+    tensor = grayscale // ไม่ต้อง expandDims เพราะ grayscale อยู่แล้ว [48, 48, 1]
+    
     // แปลงเป็น float32 และ normalize [0..1]
     tensor = tensor.toFloat().div(255.0)
     
     // เพิ่ม batch dimension
     tensor = tensor.expandDims(0)
     
-    return tensor // [1, 48, 48, 3]
+    return tensor // [1, 48, 48, 1]
   })
 }
 
@@ -33,26 +39,24 @@ export function preprocessForHandModel(imageElement, handModel = null) {
     // แปลงเป็น float32 และ normalize [0..1]
     tensor = tensor.toFloat().div(255.0)
     
-    // ตรวจสอบ input shape ของโมเดล
-    if (handModel && handModel.inputs && handModel.inputs[0]) {
-      const inputShape = handModel.inputs[0].shape
-      console.log('[PREPROCESS] Hand model input shape:', inputShape)
-      
-      if (inputShape.length === 2) {
-        // Dense layer: [null, features] - ต้อง flatten
-        const features = Number(inputShape[1]) || (224 * 224 * 3)
-        tensor = tensor.reshape([1, features])
-        console.log('[PREPROCESS] Flattened to 2D:', tensor.shape)
-      } else {
-        // Conv2D layer: [null, h, w, c] - เพิ่ม batch dimension
-        tensor = tensor.expandDims(0)
-        console.log('[PREPROCESS] Expanded to 4D:', tensor.shape)
-      }
-    } else {
-      // Default: ใช้ 4D สำหรับ Conv2D
-      tensor = tensor.expandDims(0)
-      console.log('[PREPROCESS] Default 4D shape:', tensor.shape)
+    // Hand model ต้องการ input shape [1, 14739] (Dense layer)
+    // ต้อง resize เป็นขนาดที่เหมาะสมแล้ว flatten
+    // 14739 = 3 * 7 * 7 * 101 (ประมาณ)
+    // ลองใช้ 7x7x3 = 147
+    tensor = tf.image.resizeBilinear(tensor, [7, 7])
+    tensor = tensor.reshape([1, 7 * 7 * 3]) // [1, 147]
+    
+    // ถ้าไม่พอ 14739 ให้ pad หรือ resize ใหม่
+    if (tensor.shape[1] < 14739) {
+      // Pad ด้วย zeros
+      const padding = tf.zeros([1, 14739 - tensor.shape[1]])
+      tensor = tf.concat([tensor, padding], 1)
+    } else if (tensor.shape[1] > 14739) {
+      // Slice
+      tensor = tensor.slice([0, 0], [1, 14739])
     }
+    
+    console.log('[PREPROCESS] Hand model input shape:', tensor.shape)
     
     return tensor
   })

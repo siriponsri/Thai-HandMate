@@ -16,12 +16,9 @@ export const CONFIG = {
   
   // ประเภทโมเดล (ตามโมเดลจริง)
   MODEL_TYPES: {
-    hand: 'pose',       // Pose Model (Teachable Machine Pose)
-    face: 'tensorflow'  // TensorFlow H5 Model
+    hand: 'tensorflow',  // TensorFlow.js LayersModel
+    face: 'tensorflow'   // TensorFlow.js LayersModel
   },
-  
-  // พาธโมเดล MediaPipe (โหลดจาก CDN)
-  FACE_MODEL_PATH: 'https://cdn.jsdelivr.net/npm/@mediapipe/face_detection',
   
   // คำที่โมเดลควรจำได้ (จาก metadata จริง)
   WORD_SETS: {
@@ -48,43 +45,43 @@ export const CONFIG = {
     autoStart: true     // เปิดกล้องอัตโนมัติ
   },
   
-  // การตั้งค่า Face Detection (MediaPipe + Simple Fallback)
+  // การตั้งค่า Face Detection (TensorFlow.js + Simple Fallback)
   FACE_DETECTION: {
     enabled: true,  // เปิดใช้งาน Face Detection + Emotion Detection
     minConfidence: 0.5,
     emotions: ['neutral', 'happy', 'sad', 'surprised', 'angry', 'fear', 'disgust'],
     useEmotionDetection: true,  // เปิดใช้งาน Emotion Detection
-    detectionMethod: 'mediapipe',  // 'mediapipe', 'simple'
+    detectionMethod: 'tensorflow',  // 'tensorflow', 'simple'
     fallbackEnabled: true,  // เปิดใช้งาน fallback system
-    mediapipe: {
-      model: 'short',
+    tensorflow: {
+      modelPath: '/face-model/model.json',
       minDetectionConfidence: 0.5
     },
     simple: {
-      brightnessThreshold: 80,  // สำหรับ emotion detection
-      faceBoxSize: 0.5  // ขนาด face box จำลอง
+      brightnessThreshold: 50,  // สำหรับ simple face detection
+      faceBoxSize: 0.6  // ขนาด face box จำลอง
     }
   },
 
   // การตั้งค่าเฉพาะสำหรับแต่ละโมเดล (ตามโมเดลจริง)
   MODEL_CONFIGS: {
     hand: {
-      inputSize: 257,  // PoseNet standard size (จาก metadata)
+      inputSize: 224,  // TensorFlow.js standard size
       threshold: 0.5,
       grayscale: false,
-      description: 'HandModel_v4.0(Posture) - 9 gestures (MobileNetV1, PoseNet)'
+      description: 'Hand Model - 9 gestures (TensorFlow.js LayersModel)'
     },
     faceEmotion: {
-      inputSize: 48,   // 48x48 RGB (จาก face_expression_model.json)
+      inputSize: 48,   // 48x48 Grayscale (จาก face model)
       threshold: 0.6,
-      grayscale: false, // ใช้ RGB input
-      description: 'Face Expression Model - 7 emotions (CNN, 48x48x3)'
+      grayscale: true, // ใช้ Grayscale input
+      description: 'Face Expression Model - 7 emotions (TensorFlow.js LayersModel)'
     },
     faceDetection: {
-      inputSize: 416,  // MediaPipe standard size
+      inputSize: 224,  // TensorFlow.js standard size
       threshold: 0.5,
       grayscale: false,
-      description: 'MediaPipe Face Detection - Real-time face detection'
+      description: 'Simple Face Detection - Brightness-based detection'
     }
   },
   

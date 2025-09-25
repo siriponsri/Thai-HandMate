@@ -1,10 +1,9 @@
 // Model Loading System - ใช้ TensorFlow.js ตัวเดียว
 import * as tf from '@tensorflow/tfjs'
-import * as faceapi from '@vladmandic/face-api'
 
 // ตัวแปรเก็บโมเดล
 let handModel = null
-let faceModelsLoaded = false
+let faceModel = null
 let isInitialized = false
 
 // โหลด Hand Model (LayersModel)
@@ -44,50 +43,36 @@ export async function loadHandModel() {
   }
 }
 
-// โหลด Face Models (face-api)
-export async function loadFaceModels() {
+// โหลด Face Model (TensorFlow.js LayersModel)
+export async function loadFaceModel() {
   try {
-    console.log('[MODEL] Loading Face Models...')
+    console.log('[MODEL] Loading Face Model...')
     
-    const modelPath = '/face-model'
-    
-    // ตรวจสอบว่าไฟล์ manifest มีอยู่และถูกต้อง
-    const manifestUrls = [
-      `${modelPath}/ssd_mobilenetv1_model-weights_manifest.json`,
-      `${modelPath}/face_landmark_68_model-weights_manifest.json`,
-      `${modelPath}/face_expression_model-weights_manifest.json`
-    ]
-    
-    for (const url of manifestUrls) {
-      try {
-        const response = await fetch(url)
-        if (!response.ok) {
-          throw new Error(`Failed to fetch ${url}: ${response.status}`)
-        }
-        const text = await response.text()
-        // ลบ BOM ถ้ามี
-        const cleanText = text.replace(/^\uFEFF/, '').replace(/^ï»¿/, '')
-        JSON.parse(cleanText) // ทดสอบ parse
-        console.log(`[MODEL] ✓ ${url} is valid JSON`)
-      } catch (error) {
-        console.error(`[ERROR] Invalid JSON at ${url}:`, error)
-        throw error
-      }
+    // ตรวจสอบว่าไฟล์มีอยู่จริง
+    const modelUrl = '/face-model/model.json'
+    const response = await fetch(modelUrl)
+    if (!response.ok) {
+      throw new Error(`Face model not found: ${response.status}`)
     }
     
-    await Promise.all([
-      faceapi.nets.ssdMobilenetv1.loadFromUri(modelPath),
-      faceapi.nets.faceLandmark68Net.loadFromUri(modelPath),
-      faceapi.nets.faceExpressionNet.loadFromUri(modelPath)
-    ])
+    // ตรวจสอบ model format ก่อนโหลด
+    const modelJson = await response.json()
+    console.log('[MODEL] Face model format:', modelJson.format)
     
-    faceModelsLoaded = true
-    console.log('[SUCCESS] Face Models loaded successfully')
+    // โหลด TensorFlow.js LayersModel
+    faceModel = await tf.loadLayersModel(modelUrl)
+    
+    if (!faceModel) {
+      throw new Error('Face model loaded but is null')
+    }
+    
+    console.log('[SUCCESS] Face Model loaded successfully')
     return true
   } catch (error) {
-    console.error('[ERROR] Failed to load Face Models:', error)
-    faceModelsLoaded = false
-    return false
+    console.error('[ERROR] Failed to load Face Model:', error)
+    console.log('[INFO] Using fallback: Simple face detection only')
+    faceModel = null
+    return false // ใช้ fallback แทน
   }
 }
 
@@ -95,7 +80,7 @@ export async function loadFaceModels() {
 export async function loadAllModels() {
   if (isInitialized) {
     console.log('[MODEL] Models already loaded')
-    return { hand: !!handModel, face: faceModelsLoaded }
+    return { hand: !!handModel, face: !!faceModel }
   }
   
   try {
@@ -103,7 +88,7 @@ export async function loadAllModels() {
     
     const [handSuccess, faceSuccess] = await Promise.allSettled([
       loadHandModel(),
-      loadFaceModels()
+      loadFaceModel()
     ])
     
     isInitialized = true
@@ -125,7 +110,7 @@ export async function loadAllModels() {
 export function getModelStatus() {
   return {
     hand: !!handModel,
-    face: faceModelsLoaded,
+    face: !!faceModel,
     initialized: isInitialized
   }
 }
@@ -135,7 +120,12 @@ export function getHandModel() {
   return handModel
 }
 
-// ตรวจสอบว่า Face Models พร้อมใช้งาน
-export function isFaceModelsReady() {
-  return faceModelsLoaded
+// รับ Face Model
+export function getFaceModel() {
+  return faceModel
+}
+
+// ตรวจสอบว่า Face Model พร้อมใช้งาน
+export function isFaceModelReady() {
+  return !!faceModel
 }

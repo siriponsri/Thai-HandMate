@@ -1,6 +1,5 @@
 // Prediction System - กัน NaN และจัดการ memory
 import * as tf from '@tensorflow/tfjs'
-import * as faceapi from '@vladmandic/face-api'
 import { preprocessForHandModel, preprocessForFaceModel, validateImageElement, cropFaceFromImage } from './imageProcessor.js'
 
 // Labels สำหรับ Hand Model
@@ -78,20 +77,82 @@ export async function predictHand(imageElement, handModel) {
   }
 }
 
-// Detect Face และ Emotion
-export async function detectFaceAndEmotion(imageElement) {
+// Predict Face Emotion (ใช้ TensorFlow.js)
+export async function predictFaceEmotion(imageElement, faceModel) {
+  if (!faceModel) {
+    return {
+      emotion: 'neutral',
+      confidence: 0.0,
+      allEmotions: [],
+      source: 'no-model',
+      details: 'Face model not loaded'
+    }
+  }
+  
   try {
     validateImageElement(imageElement)
     
-    // ตรวจจับใบหน้า
-    const detection = await faceapi
-      .detectSingleFace(imageElement, new faceapi.SsdMobilenetv1Options({
-        minConfidence: 0.5
-      }))
-      .withFaceLandmarks()
-      .withFaceExpressions()
+    const input = preprocessForFaceModel(imageElement)
+    let prediction = null
     
-    if (!detection) {
+    try {
+      // ใช้ predict สำหรับ LayersModel
+      prediction = faceModel.predict(input)
+      
+      // แปลงเป็น array
+      const probs = await prediction.data()
+      
+      // ตรวจสอบ NaN
+      if (!probs.every(p => Number.isFinite(p))) {
+        throw new Error('NaN detected in face prediction')
+      }
+      
+      // สร้าง emotion objects
+      const emotions = EMOTION_LABELS.map((emotion, index) => ({
+        emotion,
+        confidence: probs[index]
+      }))
+      
+      // หาอารมณ์ที่มี confidence สูงสุด
+      const maxIndex = probs.indexOf(Math.max(...probs))
+      const bestEmotion = emotions[maxIndex]
+      
+      return {
+        emotion: bestEmotion.emotion,
+        confidence: bestEmotion.confidence,
+        allEmotions: emotions,
+        source: 'tensorflow',
+        details: `Face: ${bestEmotion.emotion} (${(bestEmotion.confidence * 100).toFixed(1)}%)`
+      }
+      
+    } finally {
+      input.dispose()
+      if (prediction) {
+        prediction.dispose()
+      }
+    }
+    
+  } catch (error) {
+    console.error('[ERROR] Face emotion prediction failed:', error)
+    return {
+      emotion: 'neutral',
+      confidence: 0.0,
+      allEmotions: [],
+      source: 'error',
+      details: `Face Error: ${error.message}`
+    }
+  }
+}
+
+// Detect Face และ Emotion (ใช้ TensorFlow.js)
+export async function detectFaceAndEmotion(imageElement, faceModel) {
+  try {
+    validateImageElement(imageElement)
+    
+    // ใช้ simple face detection (brightness-based)
+    const faceDetected = await detectFaceSimple(imageElement)
+    
+    if (!faceDetected) {
       return {
         detected: false,
         faceCount: 0,
@@ -100,37 +161,25 @@ export async function detectFaceAndEmotion(imageElement) {
         bestFaceConfidence: 0,
         emotion: 'neutral',
         emotionConfidence: 0,
-        source: 'face-api',
+        source: 'simple-detection',
         details: 'No face detected'
       }
     }
     
-    // วิเคราะห์อารมณ์
-    const expressions = detection.expressions
-    const emotions = Object.entries(expressions).map(([emotion, confidence]) => ({
-      emotion,
-      confidence
-    }))
-    
-    // หาอารมณ์ที่มี confidence สูงสุด
-    const bestEmotion = emotions.reduce((prev, current) => 
-      current.confidence > prev.confidence ? current : prev
-    )
+    // วิเคราะห์อารมณ์ด้วย TensorFlow.js
+    const emotionResult = await predictFaceEmotion(imageElement, faceModel)
     
     // สร้าง face object
     const face = {
       faceId: 1,
       box: {
-        x: detection.detection.box.x / imageElement.videoWidth,
-        y: detection.detection.box.y / imageElement.videoHeight,
-        width: detection.detection.box.width / imageElement.videoWidth,
-        height: detection.detection.box.height / imageElement.videoHeight
+        x: 0.2, // กลางภาพ
+        y: 0.2,
+        width: 0.6,
+        height: 0.6
       },
-      confidence: detection.detection.score,
-      landmarks: detection.landmarks.positions.map(pos => ({
-        x: pos.x / imageElement.videoWidth,
-        y: pos.y / imageElement.videoHeight
-      }))
+      confidence: 0.8, // confidence สำหรับ simple detection
+      landmarks: [] // ไม่มี landmarks สำหรับ simple detection
     }
     
     return {
@@ -138,12 +187,12 @@ export async function detectFaceAndEmotion(imageElement) {
       faceCount: 1,
       faces: [face],
       bestFace: face,
-      bestFaceConfidence: detection.detection.score,
-      emotion: bestEmotion.emotion,
-      emotionConfidence: bestEmotion.confidence,
-      allEmotions: emotions,
-      source: 'face-api',
-      details: `Face: ${(detection.detection.score * 100).toFixed(1)}%, Emotion: ${bestEmotion.emotion} (${(bestEmotion.confidence * 100).toFixed(1)}%)`
+      bestFaceConfidence: face.confidence,
+      emotion: emotionResult.emotion,
+      emotionConfidence: emotionResult.confidence,
+      allEmotions: emotionResult.allEmotions,
+      source: 'tensorflow',
+      details: `Face: ${(face.confidence * 100).toFixed(1)}%, Emotion: ${emotionResult.emotion} (${(emotionResult.confidence * 100).toFixed(1)}%)`
     }
     
   } catch (error) {
@@ -156,9 +205,44 @@ export async function detectFaceAndEmotion(imageElement) {
       bestFaceConfidence: 0,
       emotion: 'neutral',
       emotionConfidence: 0,
-      source: 'face-api-error',
+      source: 'error',
       details: `Face Error: ${error.message}`
     }
+  }
+}
+
+// Simple Face Detection (brightness-based)
+async function detectFaceSimple(imageElement) {
+  try {
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    
+    canvas.width = imageElement.videoWidth || imageElement.width
+    canvas.height = imageElement.videoHeight || imageElement.height
+    
+    ctx.drawImage(imageElement, 0, 0)
+    
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    const data = imageData.data
+    
+    // คำนวณความสว่างเฉลี่ย
+    let totalBrightness = 0
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i]
+      const g = data[i + 1]
+      const b = data[i + 2]
+      const brightness = (r + g + b) / 3
+      totalBrightness += brightness
+    }
+    
+    const avgBrightness = totalBrightness / (data.length / 4)
+    
+    // ถ้าความสว่างอยู่ในช่วงที่เหมาะสม (ไม่มืดเกินไป ไม่สว่างเกินไป)
+    return avgBrightness > 50 && avgBrightness < 200
+    
+  } catch (error) {
+    console.error('[ERROR] Simple face detection failed:', error)
+    return false
   }
 }
 
