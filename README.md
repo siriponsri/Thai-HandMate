@@ -45,10 +45,16 @@ thai-handmate/
 ├── public/                          # ไฟล์สาธารณะ
 │   ├── hand-model/                  # Hand Model (Teachable Machine)
 │   │   ├── model.json
-│   │   └── weights.bin
+│   │   ├── weights.bin
+│   │   └── metadata.json
 │   └── face-model/                  # Face Model (TensorFlow.js)
 │       ├── model.json
-│       └── weights.bin
+│       ├── weights.bin
+│       ├── group1-shard1of5.bin
+│       ├── group1-shard2of5.bin
+│       ├── group1-shard3of5.bin
+│       ├── group1-shard4of5.bin
+│       └── group1-shard5of5.bin
 ├── src/                            # Source Code
 │   ├── components/                 # React Components
 │   │   ├── CameraFeed.jsx         # กล้องและปุ่มถ่ายภาพ
@@ -63,11 +69,15 @@ thai-handmate/
 │   │   ├── processor.js           # ควบคุมการประมวลผล
 │   │   ├── unifiedProcessor.js    # รวมผลลัพธ์
 │   │   └── config.js              # การตั้งค่าระบบ
-│   └── App.jsx                    # Main App Component
+│   ├── App.jsx                    # Main App Component
+│   ├── main.jsx                   # Entry Point
+│   └── styles.css                 # Global Styles
 ├── backend/                        # Backend API
 │   ├── app.py                     # FastAPI Application
 │   └── requirements.txt           # Python Dependencies
 ├── package.json                   # Node.js Dependencies
+├── vite.config.js                 # Vite Configuration
+├── start.bat                      # Windows Start Script
 └── README.md                      # เอกสารโปรเจกต์
 ```
 
