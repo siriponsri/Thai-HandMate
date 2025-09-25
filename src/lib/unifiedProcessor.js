@@ -4,7 +4,7 @@
 import { CONFIG } from './config.js'
 
 // ประมวลผลภาพแบบรวม (Hand + Face + Emotion)
-export async function processUnifiedImage(videoElement, handResults, faceResults, emotionResults) {
+export async function processUnifiedImage(videoElement, result) {
   try {
     console.log('[INFO] เริ่มประมวลผลภาพแบบรวม...')
     
@@ -18,205 +18,124 @@ export async function processUnifiedImage(videoElement, handResults, faceResults
     canvas.height = videoElement.videoHeight
     ctx.drawImage(videoElement, 0, 0)
     
-    // แปลง canvas เป็น blob สำหรับแสดงผล
-    const imageBlob = await new Promise(resolve => {
+    // แปลงเป็น blob
+    const blob = await new Promise(resolve => {
       canvas.toBlob(resolve, 'image/jpeg', 0.8)
     })
     
-    // รวมผลลัพธ์ทั้งหมด
-    const unifiedResult = {
-      timestamp: timestamp,
-      imageBlob: imageBlob,
-      
-      // ผลลัพธ์ Hand Gestures
-      hands: {
-        bestWord: handResults?.word || 'Unknown',
-        confidence: handResults?.confidence || 0,
-        source: handResults?.source || 'no-model',
-        allResults: handResults?.allResults || [],
-        details: handResults?.details || 'ไม่สามารถประมวลผลได้'
-      },
-      
-      // ผลลัพธ์ Face Detection
-      face: {
-        detected: faceResults?.faces?.length > 0,
-        faceCount: faceResults?.faces?.length || 0,
-        bestFaceConfidence: faceResults?.faces?.length > 0 ? 
-          Math.max(...faceResults.faces.map(f => f.confidence)) : 0,
-        source: faceResults?.source || 'no-face-detected',
-        details: faceResults?.details || 'ไม่พบใบหน้า'
-      },
-      
-      // ผลลัพธ์ Emotion Detection
-      emotion: {
-        bestEmotion: emotionResults?.emotion || 'neutral',
-        confidence: emotionResults?.confidence || 0,
-        allEmotions: emotionResults?.allEmotions || [],
-        source: emotionResults?.source || 'no-emotion-model',
-        details: emotionResults?.details || 'ไม่สามารถตรวจจับอารมณ์ได้'
-      },
-      
-      // ข้อมูลสำหรับ LLM
-      forLLM: {
-        words: extractWordsForLLM(handResults),
-        emotion: emotionResults?.emotion || 'neutral',
-        wordConfidences: extractWordConfidences(handResults),
-        emotionConfidences: emotionResults?.allEmotions || [],
-        faceDetected: faceResults?.faces?.length > 0,
-        faceConfidence: faceResults?.faces?.length > 0 ? 
-          Math.max(...faceResults.faces.map(f => f.confidence)) : 0
-      },
-      
-      // ข้อมูลเพิ่มเติม
-      metadata: {
-        processingTime: Date.now(),
-        imageSize: {
-          width: canvas.width,
-          height: canvas.height
-        },
-        modelVersions: {
-          hand: 'teachable-machine',
-          face: 'mediapipe',
-          emotion: emotionResults?.source || 'simple'
-        }
-      }
-    }
+    // สร้าง JSON สำหรับ LLM
+    const llmJson = createLLMJson(result, timestamp, blob)
     
-    console.log('[SUCCESS] ประมวลผลภาพแบบรวมเสร็จแล้ว:', unifiedResult)
-    return unifiedResult
+    console.log('[SUCCESS] ประมวลผลภาพแบบรวมเสร็จแล้ว :', llmJson)
+    
+    return llmJson
     
   } catch (error) {
-    console.error('[ERROR] ข้อผิดพลาดในการประมวลผลภาพแบบรวม:', error)
-    return createErrorResult(error.message)
+    console.error('[ERROR] ประมวลผลภาพแบบรวมล้มเหลว:', error)
+    throw error
   }
 }
 
 // สร้าง JSON สำหรับ LLM
-export function createLLMJson(unifiedResult) {
-  const { hands, emotion, face } = unifiedResult
+export function createLLMJson(result, timestamp, imageBlob) {
+  const { hands, face, emotion } = result
   
-  // กรองคำที่มี confidence สูงกว่าเกณฑ์
-  const validWords = hands.allResults
-    .filter(result => result.confidence > CONFIG.MIN_CONFIDENCE)
-    .map(result => result.word)
-  
-  // สร้าง JSON สำหรับ LLM
-  const llmJson = {
-    timestamp: unifiedResult.timestamp,
-    
-    // ข้อมูลหลัก
+  return {
+    timestamp,
+    imageBlob,
     signLanguage: {
-      words: validWords,
-      bestWord: hands.bestWord,
-      confidence: hands.confidence,
-      source: hands.source
+      word: hands.word || 'Unknown',
+      confidence: hands.confidence || 0,
+      source: hands.source || 'unknown',
+      details: hands.details || ''
     },
-    
-    // ข้อมูลอารมณ์
     emotion: {
-      emotion: emotion.bestEmotion,
-      confidence: emotion.confidence,
-      source: emotion.source
+      emotion: emotion.emotion || 'neutral',
+      confidence: emotion.confidence || 0,
+      source: emotion.source || 'unknown',
+      details: emotion.details || ''
     },
-    
-    // ข้อมูลใบหน้า
     face: {
-      detected: face.detected,
-      faceCount: face.faceCount,
-      confidence: face.bestFaceConfidence
+      detected: face.detected || false,
+      faceCount: face.faceCount || 0,
+      bestFaceConfidence: face.bestFaceConfidence || 0,
+      source: face.source || 'unknown',
+      details: face.details || ''
     },
-    
-    // ข้อมูลสำหรับการสร้างประโยค
     context: {
-      hasSignLanguage: validWords.length > 0,
-      hasEmotion: emotion.confidence > 0.3,
-      hasFace: face.detected,
-      overallConfidence: calculateOverallConfidence(unifiedResult)
+      processingTime: new Date().toISOString(),
+      modelVersion: '2.0.0',
+      systemStatus: 'active'
     }
   }
-  
-  return llmJson
 }
 
 // สร้าง JSON สำหรับ API
-export function createAPIJson(unifiedResult) {
-  const llmJson = createLLMJson(unifiedResult)
+export function createAPIJson(result) {
+  const { hands, face, emotion } = result
   
   return {
-    ...llmJson,
-    
-    // ข้อมูลเพิ่มเติมสำหรับ API
-    api: {
-      version: '1.0.0',
-      endpoint: '/api/generate',
-      method: 'POST'
+    words: [hands.word || 'Unknown'],
+    wordConfidences: [hands.confidence || 0],
+    emotion: emotion.emotion || 'neutral',
+    emotionConfidences: [emotion.confidence || 0],
+    faceDetected: face.detected || false,
+    faceCount: face.faceCount || 0,
+    timestamp: new Date().toISOString()
+  }
+}
+
+// ตรวจสอบความถูกต้องของผลลัพธ์
+export function validateResult(result) {
+  if (!result || typeof result !== 'object') {
+    return false
+  }
+  
+  const { hands, face, emotion } = result
+  
+  // ตรวจสอบ hands
+  if (!hands || typeof hands.word !== 'string' || typeof hands.confidence !== 'number') {
+    return false
+  }
+  
+  // ตรวจสอบ face
+  if (!face || typeof face.detected !== 'boolean' || typeof face.faceCount !== 'number') {
+    return false
+  }
+  
+  // ตรวจสอบ emotion
+  if (!emotion || typeof emotion.emotion !== 'string' || typeof emotion.confidence !== 'number') {
+    return false
+  }
+  
+  return true
+}
+
+// สร้าง fallback result
+export function createFallbackResult() {
+  return {
+    hands: {
+      word: 'Unknown',
+      confidence: 0,
+      source: 'fallback',
+      details: 'Fallback result'
     },
-    
-    // ข้อมูลสำหรับ debugging
-    debug: {
-      processingTime: unifiedResult.metadata.processingTime,
-      modelVersions: unifiedResult.metadata.modelVersions,
-      imageSize: unifiedResult.metadata.imageSize
+    face: {
+      detected: false,
+      faceCount: 0,
+      faces: [],
+      bestFace: null,
+      bestFaceConfidence: 0,
+      emotion: 'neutral',
+      emotionConfidence: 0,
+      source: 'fallback',
+      details: 'Fallback result'
+    },
+    emotion: {
+      emotion: 'neutral',
+      confidence: 0,
+      source: 'fallback',
+      details: 'Fallback result'
     }
-  }
-}
-
-// Helper functions
-function extractWordsForLLM(handResults) {
-  if (!handResults?.allResults) return []
-  
-  return handResults.allResults
-    .filter(result => result.confidence > CONFIG.MIN_CONFIDENCE)
-    .map(result => result.word)
-}
-
-function extractWordConfidences(handResults) {
-  if (!handResults?.allResults) return []
-  
-  return handResults.allResults
-    .filter(result => result.confidence > CONFIG.MIN_CONFIDENCE)
-    .map(result => ({
-      word: result.word,
-      confidence: result.confidence,
-      source: result.source
-    }))
-}
-
-function calculateOverallConfidence(unifiedResult) {
-  const { hands, emotion, face } = unifiedResult
-  
-  let totalConfidence = 0
-  let count = 0
-  
-  // Hand confidence
-  if (hands.confidence > 0) {
-    totalConfidence += hands.confidence
-    count++
-  }
-  
-  // Emotion confidence
-  if (emotion.confidence > 0) {
-    totalConfidence += emotion.confidence
-    count++
-  }
-  
-  // Face confidence
-  if (face.bestFaceConfidence > 0) {
-    totalConfidence += face.bestFaceConfidence
-    count++
-  }
-  
-  return count > 0 ? totalConfidence / count : 0
-}
-
-function createErrorResult(errorMessage) {
-  return {
-    timestamp: new Date().toISOString(),
-    imageBlob: null,
-    hands: { bestWord: 'Unknown', confidence: 0, source: 'error', allResults: [], details: errorMessage },
-    face: { detected: false, faceCount: 0, bestFaceConfidence: 0, source: 'error', details: errorMessage },
-    emotion: { bestEmotion: 'neutral', confidence: 0, allEmotions: [], source: 'error', details: errorMessage },
-    forLLM: { words: [], emotion: 'neutral', wordConfidences: [], emotionConfidences: [], faceDetected: false, faceConfidence: 0 },
-    metadata: { processingTime: Date.now(), imageSize: { width: 0, height: 0 }, modelVersions: { hand: 'error', face: 'error', emotion: 'error' } }
   }
 }

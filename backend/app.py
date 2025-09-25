@@ -77,7 +77,20 @@ TYPHOON_API_KEY = os.getenv('TYPHOON_API_KEY', '')
 TYPHOON_API_BASE = os.getenv('TYPHOON_API_BASE', 'https://api.typhoon.io/v1/chat/completions')
 
 # Models
+class LLMData(BaseModel):
+    """ข้อมูลแบบ LLM format จาก frontend"""
+    signLanguage: dict = {}
+    emotion: dict = {}
+    face: dict = {}
+    context: dict = {}
+
+class UnifiedRequest(BaseModel):
+    """Request format ใหม่จาก unified processor"""
+    capturedData: List[LLMData] = []
+    summary: dict = {}
+
 class GenerateRequest(BaseModel):
+    """Request format เดิม (สำหรับ backward compatibility)"""
     words: List[str]
     emotion: str = "neutral"  # อารมณ์หลัก
     wordConfidences: List[float] = []  # ค่า confidence ของแต่ละคำ
@@ -100,21 +113,54 @@ async def health_check():
 
 # Generate sentences endpoint
 @app.post("/api/generate", response_model=GenerateResponse)
-async def generate_sentences(request: GenerateRequest):
-    """สร้างประโยคไทยจากรายการคำ"""
+async def generate_sentences(request: dict):
+    """สร้างประโยคไทยจากรายการคำ (รองรับทั้ง format เก่าและใหม่)"""
     
-    if not request.words:
+    # ตรวจสอบ format ของ request
+    if "capturedData" in request and "summary" in request:
+        # Format ใหม่จาก unified processor
+        unified_req = UnifiedRequest(**request)
+        
+        # แปลงเป็น format เดิม
+        words = unified_req.summary.get("words", [])
+        emotion = unified_req.summary.get("overallEmotion", "neutral")
+        
+        # รวบรวม confidence จากทุกภาพ
+        word_confidences = []
+        emotion_confidences = []
+        
+        for capture in unified_req.capturedData:
+            if capture.signLanguage:
+                word_confidences.append(capture.signLanguage.get("confidence", 0))
+            if capture.emotion:
+                emotion_confidences.append(capture.emotion.get("confidence", 0))
+    else:
+        # Format เดิม
+        gen_req = GenerateRequest(**request)
+        words = gen_req.words
+        emotion = gen_req.emotion
+        word_confidences = gen_req.wordConfidences
+        emotion_confidences = gen_req.emotionConfidences
+    
+    if not words:
         raise HTTPException(status_code=400, detail="ต้องระบุคำอย่างน้อย 1 คำ")
     
     # ลองใช้ Typhoon API ก่อน
     if TYPHOON_API_KEY:
         try:
-            sentences = await generate_with_typhoon(
-                request.words, 
-                request.emotion, 
-                request.wordConfidences, 
-                request.emotionConfidences
-            )
+            # ถ้ามี unified data ให้ส่งไปด้วย
+            if "capturedData" in request:
+                sentences = await generate_with_typhoon_unified(
+                    unified_req.capturedData,
+                    unified_req.summary
+                )
+            else:
+                sentences = await generate_with_typhoon(
+                    words, 
+                    emotion, 
+                    word_confidences, 
+                    emotion_confidences
+                )
             return GenerateResponse(sentences=sentences, provider="typhoon")
         except Exception as e:
             error_msg = str(e)
@@ -127,7 +173,7 @@ async def generate_sentences(request: GenerateRequest):
             # If API fails, use fallback
     
     # Fallback: สร้างประโยคแบบง่าย
-    fallback_sentences = generate_fallback_sentences(request.words, request.emotion, request.wordConfidences)
+    fallback_sentences = generate_fallback_sentences(words, emotion, word_confidences)
     return GenerateResponse(sentences=fallback_sentences, provider="fallback")
 
 async def generate_with_typhoon(words: List[str], emotion: str = "neutral", word_confidences: List[float] = None, emotion_confidences: List[float] = None) -> List[str]:
@@ -150,7 +196,28 @@ async def generate_with_typhoon(words: List[str], emotion: str = "neutral", word
     # Prompt ใหม่ตามที่คุณระบุ
     system_prompt = """คุณเป็นผู้ช่วย AI ที่เชี่ยวชาญภาษาไทยและภาษามือไทย ให้สร้างประโยคไทยที่เป็นธรรมชาติ ถูกต้องตามหลักภาษา และใช้ในชีวิตประจำวันได้จริง"""
 
-    user_prompt = f"""จากข้อมูลภาษามือไทยและอารมณ์เหล่านี้: {words_json}
+    # ตรวจสอบว่าเป็น unknown หรือไม่
+    is_unknown = all(word.lower() == "unknown" for word in words)
+    
+    if is_unknown:
+        user_prompt = f"""จากข้อมูลภาษามือไทยและอารมณ์เหล่านี้: {words_json}
+
+ระบบไม่สามารถจดจำภาษามือได้ (Unknown) แต่ตรวจพบอารมณ์เป็น {emotion}
+
+กรุณาสร้างประโยคไทยที่แสดงอารมณ์ {emotion} จำนวน 3 ประโยค โดย:
+- สื่อถึงอารมณ์ที่ตรวจพบได้อย่างชัดเจน
+- เป็นประโยคทั่วไปที่ใช้แสดงอารมณ์นั้นๆ
+- เหมาะสมกับการสื่อสารด้วยภาษามือ
+- ใช้คำพูดที่สุภาพและเป็นมิตร
+
+ตัวอย่างถ้าอารมณ์เป็น happy: "วันนี้อากาศดีจัง", "ดีใจที่ได้เจอกัน", "มีความสุขมากเลย"
+
+ตอบเป็นรายการประโยคเท่านั้น เช่น:
+1. [ประโยคที่ 1]
+2. [ประโยคที่ 2] 
+3. [ประโยคที่ 3]"""
+    else:
+        user_prompt = f"""จากข้อมูลภาษามือไทยและอารมณ์เหล่านี้: {words_json}
 
 กรุณาสร้างประโยคไทยที่เป็นธรรมชาติ 3 ประโยค โดย:
 - ใช้คำภาษามือที่ให้มาทั้งหมดหรือส่วนใหญ่
@@ -159,6 +226,99 @@ async def generate_with_typhoon(words: List[str], emotion: str = "neutral", word
 - ถูกต้องตามหลักไวยากรณ์ไทย
 - สื่อความหมายได้ชัดเจน
 - เรียงคำต่อกันเป็นประโยคภาษาไทยที่สมบูรณ์ที่สุด
+- หากมีคำว่า Unknown ให้ข้ามไปและใช้คำอื่นๆที่มี
+
+ตอบเป็นรายการประโยคเท่านั้น เช่น:
+1. [ประโยคที่ 1]
+2. [ประโยคที่ 2] 
+3. [ประโยคที่ 3]"""
+
+    payload = {
+        "model": "typhoon-v2.1-12b-instruct",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        "max_tokens": 700,
+        "temperature": 0.5
+    }
+
+    headers = {
+        "Authorization": f"Bearer {TYPHOON_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        # ใช้ rate limiter สำหรับการ request
+        response = await typhoon_limiter.make_request_async(payload, headers, timeout=30.0)
+        
+        if response.status_code == 429:  # Too Many Requests
+            print("[WARNING] Rate limit exceeded, waiting...")
+            await asyncio.sleep(5)  # Wait 5 seconds and retry
+            response = await typhoon_limiter.make_request_async(payload, headers, timeout=30.0)
+        
+        if response.status_code != 200:
+            raise Exception(f"API Error: {response.status_code} - {response.text}")
+        
+        data = response.json()
+        content = data['choices'][0]['message']['content']
+        
+        # แปลงการตอบกลับเป็นรายการประโยค
+        sentences = []
+        for line in content.strip().split('\n'):
+            line = line.strip()
+            if line and not line.startswith('#'):
+                # ลบหมายเลข หรือ bullet points
+                clean_line = line.lstrip('123456789.- ')
+                if clean_line:
+                    sentences.append(clean_line)
+        
+        return sentences[:3]  # เอาแค่ 3 ประโยคแรก
+        
+    except httpx.TimeoutException:
+        raise Exception("API Timeout - request took too long")
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 429:
+            raise Exception("Rate limit exceeded - please try again later")
+        raise Exception(f"HTTP Error: {e.response.status_code}")
+    except Exception as e:
+        raise Exception(f"API Request Failed: {str(e)}")
+
+async def generate_with_typhoon_unified(captured_data: List[LLMData], summary: dict) -> List[str]:
+    """สร้างประโยคด้วย Typhoon LLM จาก unified data format"""
+    
+    # สร้าง JSON สำหรับข้อมูลทั้งหมด
+    data_for_llm = {
+        "captures": [
+            {
+                "word": cap.signLanguage.get("bestWord", "Unknown"),
+                "wordConfidence": cap.signLanguage.get("confidence", 0),
+                "emotion": cap.emotion.get("emotion", "neutral"),
+                "emotionConfidence": cap.emotion.get("confidence", 0),
+                "faceDetected": cap.face.get("detected", False),
+                "faceCount": cap.face.get("faceCount", 0)
+            }
+            for cap in captured_data
+        ],
+        "summary": summary
+    }
+    
+    data_json = json.dumps(data_for_llm, ensure_ascii=False)
+    
+    # Prompt พิเศษสำหรับ unified data
+    system_prompt = """คุณเป็นผู้ช่วย AI ที่เชี่ยวชาญภาษาไทยและภาษามือไทย ให้สร้างประโยคไทยที่เป็นธรรมชาติ ถูกต้องตามหลักภาษา และใช้ในชีวิตประจำวันได้จริง
+
+คุณจะได้รับข้อมูลที่มีทั้งภาษามือ อารมณ์ใบหน้า และการตรวจจับใบหน้า พร้อมค่าความมั่นใจ ให้พิจารณาข้อมูลทั้งหมดเพื่อสร้างประโยคที่เหมาะสม"""
+
+    user_prompt = f"""จากข้อมูลการจับภาพภาษามือไทยและการแสดงออกทางใบหน้า: {data_json}
+
+กรุณาวิเคราะห์ข้อมูลทั้งหมดและสร้างประโยคไทยที่เป็นธรรมชาติ 3 ประโยค โดย:
+- พิจารณาลำดับคำภาษามือที่จับได้ตามลำดับเวลา
+- พิจารณาค่าความมั่นใจ (confidence) ของแต่ละคำ
+- พิจารณาอารมณ์ที่ตรวจพบในแต่ละภาพ
+- สร้างประโยคที่สอดคล้องกับบริบทและอารมณ์
+- เป็นประโยคที่คนไทยใช้จริงในชีวิตประจำวัน
+- ถูกต้องตามหลักไวยากรณ์ไทย
 
 ตอบเป็นรายการประโยคเท่านั้น เช่น:
 1. [ประโยคที่ 1]
@@ -240,6 +400,36 @@ def generate_fallback_sentences(words: List[str], emotion: str = "neutral", word
         emotion_suffix = " 😢"
     elif emotion == "angry":
         emotion_suffix = " 😠"
+    
+    # ตรวจสอบว่าเป็น unknown หรือไม่
+    is_unknown = all(word.lower() == "unknown" for word in words)
+    
+    if is_unknown:
+        # ประโยคตามอารมณ์สำหรับ unknown
+        if emotion == "happy":
+            return [
+                "ดีใจมากเลยครับ/ค่ะ 😊",
+                "มีความสุขจังเลย 😊",
+                "วันนี้อารมณ์ดีมากครับ/ค่ะ 😊"
+            ]
+        elif emotion == "sad":
+            return [
+                "เศร้าใจนิดหน่อยครับ/ค่ะ 😢",
+                "รู้สึกไม่ค่อยดีเท่าไหร่ 😢",
+                "วันนี้ใจไม่ค่อยดีครับ/ค่ะ 😢"
+            ]
+        elif emotion == "angry":
+            return [
+                "รู้สึกหงุดหงิดนิดหน่อย 😠",
+                "อารมณ์ไม่ค่อยดีครับ/ค่ะ 😠",
+                "รู้สึกไม่พอใจเล็กน้อย 😠"
+            ]
+        else:  # neutral หรืออื่นๆ
+            return [
+                "สวัสดีครับ/ค่ะ",
+                "ยินดีที่ได้พบกันครับ/ค่ะ",
+                "มีอะไรให้ช่วยไหมครับ/คะ"
+            ]
     
     # ประโยคพื้นฐาน
     basic = f"{words_text}{emotion_suffix}"

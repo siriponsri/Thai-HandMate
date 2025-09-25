@@ -5,10 +5,9 @@ import { CONFIG } from '../lib/config.js'
 export default function StatusBadge() {
   const [modelStatus, setModelStatus] = useState({
     hasAnyModel: false,
-    hasModelA: false,
-    hasModelB: false,
-    hasModelC: false,
+    hasHandModel: false,
     hasFaceModels: false,
+    hasEmotionModels: false,
     isLoading: true
   })
   
@@ -29,24 +28,23 @@ export default function StatusBadge() {
   }, [])
   
   const getStatusInfo = () => {
-    const { hasAnyModel, hasModelA, hasModelB, hasModelC, hasFaceModels, isLoading } = modelStatus
+    const { hasAnyModel, hasHandModel, hasFaceModels, hasEmotionModels, isLoading } = modelStatus
     
     if (isLoading) {
       return { text: '⏳ กำลังโหลด...', className: 'badge-warning' }
     }
     
-    // นับโมเดลที่พร้อมใช้งาน
-    const handModels = [hasModelA, hasModelB, hasModelC].filter(Boolean)
-    const totalReady = handModels.length + (hasFaceModels ? 1 : 0)
+    // นับโมเดลที่พร้อมใช้งาน (3 โมเดล: Hand, Face Detection, Emotion)
+    const totalReady = (hasHandModel ? 1 : 0) + (hasFaceModels ? 1 : 0) + (hasEmotionModels ? 1 : 0)
     
-    if (totalReady === 4) {
-      return { text: '✅ ทุกโมเดลพร้อม (4/4)', className: 'badge-success' }
+    if (totalReady === 3) {
+      return { text: '✅ ทุกโมเดลพร้อม (3/3)', className: 'badge-success' }
     } else if (totalReady >= 2) {
-      return { text: `🟡 โมเดลพร้อม (${totalReady}/4)`, className: 'badge-warning' }
-    } else if (hasAnyModel || hasFaceModels) {
-      return { text: `🟠 โมเดลพร้อม (${totalReady}/4)`, className: 'badge-warning' }
+      return { text: `🟡 โมเดลพร้อม (${totalReady}/3)`, className: 'badge-warning' }
+    } else if (hasAnyModel || hasFaceModels || hasEmotionModels) {
+      return { text: `🟠 โมเดลพร้อม (${totalReady}/3)`, className: 'badge-warning' }
     } else {
-      return { text: '❌ ไม่มีโมเดล (0/4)', className: 'badge-error' }
+      return { text: '❌ ไม่มีโมเดล (0/3)', className: 'badge-error' }
     }
   }
   
@@ -60,10 +58,9 @@ export default function StatusBadge() {
       
       {/* แสดงรายละเอียดโมเดลแต่ละตัว */}
       <div className="hidden md:flex items-center gap-1 text-xs">
-        <span className={`w-2 h-2 rounded-full ${modelStatus.hasModelA ? 'bg-green-500' : 'bg-gray-400'}`} title="Hand Model A"></span>
-        <span className={`w-2 h-2 rounded-full ${modelStatus.hasModelB ? 'bg-green-500' : 'bg-gray-400'}`} title="Hand Model B"></span>
-        <span className={`w-2 h-2 rounded-full ${modelStatus.hasModelC ? 'bg-green-500' : 'bg-gray-400'}`} title="Hand Model C"></span>
-        <span className={`w-2 h-2 rounded-full ${modelStatus.hasFaceModels ? 'bg-green-500' : 'bg-gray-400'}`} title="Face API"></span>
+        <span className={`w-2 h-2 rounded-full ${modelStatus.hasHandModel ? 'bg-green-500' : 'bg-gray-400'}`} title="Hand Model"></span>
+        <span className={`w-2 h-2 rounded-full ${modelStatus.hasFaceModels ? 'bg-green-500' : 'bg-gray-400'}`} title="Face Detection"></span>
+        <span className={`w-2 h-2 rounded-full ${modelStatus.hasEmotionModels ? 'bg-green-500' : 'bg-gray-400'}`} title="Emotion Detection"></span>
       </div>
     </div>
   )

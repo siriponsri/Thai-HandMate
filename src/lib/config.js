@@ -8,31 +8,25 @@ export const CONFIG = {
   // เปิดใช้งาน Unknown-first (ครั้งแรกจะได้ Unknown เสมอ)
   UNKNOWN_FIRST: false,  // ปิดเพื่อให้ทำงานจริง
   
-  // พาธโมเดล Teachable Machine (3 โมเดลมือ + 1 โมเดลอารมณ์)
+  // พาธโมเดล Teachable Machine (โมเดลใหม่)
   MODEL_PATHS: {
-    handA: '/models/handA',  // สวัสดี, คิดถึง, น่ารัก, สวย, ชอบ, ไม่ชอบ, รัก, ขอโทษ, idle
-    handB: '/models/handB',  // ขอบคุณ, ไม่เป็นไร, สบายดี, โชคดี, เก่ง, อิ่ม, หิว, เศร้า, idle
-    handC: '/models/handC',  // ฉลาด, เป็นห่วง, ไม่สบาย, เข้าใจ, idle
-    faceEmotion: '/models/face-emotion'  // angry, disgust, fear, happy, sad, surprised, neutral
+    hand: '/hand-model',                    // โมเดลมือเดียว (รวมทุกคำ)
+    face: '/face-model'                     // โมเดลใบหน้าและอารมณ์ (H5 format)
   },
   
-  // ประเภทโมเดล (สำหรับการเทรนใหม่)
+  // ประเภทโมเดล (ตามโมเดลจริง)
   MODEL_TYPES: {
-    handA: 'pose',  // Pose Model (skeleton tracking)
-    handB: 'pose',  // Pose Model (skeleton tracking)  
-    handC: 'pose',  // Pose Model (skeleton tracking)
-    face: 'mediapipe', // MediaPipe Face Detection Model
-    faceEmotion: 'image' // Picture Model (FER2013 dataset)
+    hand: 'pose',       // Pose Model (Teachable Machine Pose)
+    face: 'tensorflow'  // TensorFlow H5 Model
   },
   
   // พาธโมเดล MediaPipe (โหลดจาก CDN)
   FACE_MODEL_PATH: 'https://cdn.jsdelivr.net/npm/@mediapipe/face_detection',
   
-  // คำที่โมเดลแต่ละชุดควรจำได้ (ยึดตาม JSON จริง)
+  // คำที่โมเดลควรจำได้ (จาก metadata จริง)
   WORD_SETS: {
-    A: ['สวัสดี', 'คิดถึง', 'น่ารัก', 'สวย', 'ชอบ', 'ไม่ชอบ', 'รัก', 'ขอโทษ', 'idle'], // ยังไม่มี JSON
-    B: ['ขอบคุณ', 'ไม่เป็นไร', 'สบายดี', 'โชคดี', 'เก่ง', 'อิ่ม', 'หิว', 'เศร้า', 'Idle'], // ตรงกับ JSON (Idle ตัวใหญ่)
-    C: ['ฉลาด', 'เป็นห่วง', 'ไม่สบาย', 'เข้าใจ', 'Idle'] // ตรงกับ JSON (Idle ตัวใหญ่)
+    hand: ['เริ่ม', 'เรียนรู้', 'AI', 'อย่างไร', 'ช่วยเหลือ', 'ไม่ใช่', 'หยุด', 'ถัดไป', 'สถานะว่าง'], // 9 คำจาก HandModel_v4.0
+    face: ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprised'] // 7 อารมณ์จาก Face Model
   },
   
   // การตั้งค่า Backend API
@@ -41,9 +35,9 @@ export const CONFIG = {
   // การตั้งค่า Typhoon API
   TYPHOON_API: {
     URL: 'https://api.opentyphoon.ai/v1/chat/completions',
-    MODEL: 'typhoon-7b',
-    MAX_TOKENS: 150,
-    TEMPERATURE: 0.7
+    MODEL: 'typhoon-v2.1-12b-instruct',  // ใช้ model ที่ถูกต้องตาม backend
+    MAX_TOKENS: 700,  // ตาม backend config
+    TEMPERATURE: 0.5  // ตาม backend config
   },
   
   // การตั้งค่ากล้อง
@@ -54,40 +48,43 @@ export const CONFIG = {
     autoStart: true     // เปิดกล้องอัตโนมัติ
   },
   
-  // การตั้งค่า Face Detection
+  // การตั้งค่า Face Detection (MediaPipe + Simple Fallback)
   FACE_DETECTION: {
     enabled: true,  // เปิดใช้งาน Face Detection + Emotion Detection
     minConfidence: 0.5,
     emotions: ['neutral', 'happy', 'sad', 'surprised', 'angry', 'fear', 'disgust'],
-    useEmotionDetection: true,  // เปิดใช้งาน Emotion Detection (Simple Mode)
-    emotionMode: 'simple'  // ใช้ simple emotion detection
+    useEmotionDetection: true,  // เปิดใช้งาน Emotion Detection
+    detectionMethod: 'mediapipe',  // 'mediapipe', 'simple'
+    fallbackEnabled: true,  // เปิดใช้งาน fallback system
+    mediapipe: {
+      model: 'short',
+      minDetectionConfidence: 0.5
+    },
+    simple: {
+      brightnessThreshold: 80,  // สำหรับ emotion detection
+      faceBoxSize: 0.5  // ขนาด face box จำลอง
+    }
   },
 
-  // การตั้งค่าเฉพาะสำหรับแต่ละโมเดล
+  // การตั้งค่าเฉพาะสำหรับแต่ละโมเดล (ตามโมเดลจริง)
   MODEL_CONFIGS: {
-    handA: {
-      inputSize: 224,
-      threshold: 0.7,
+    hand: {
+      inputSize: 257,  // PoseNet standard size (จาก metadata)
+      threshold: 0.5,
       grayscale: false,
-      description: 'Pose Model - 9 gestures (skeleton tracking)'
-    },
-    handB: {
-      inputSize: 224,
-      threshold: 0.7,
-      grayscale: false,
-      description: 'Pose Model - 9 gestures (skeleton tracking)'
-    },
-    handC: {
-      inputSize: 224,
-      threshold: 0.7,
-      grayscale: false,
-      description: 'Pose Model - 5 gestures (skeleton tracking)'
+      description: 'HandModel_v4.0(Posture) - 9 gestures (MobileNetV1, PoseNet)'
     },
     faceEmotion: {
-      inputSize: 48,  // FER2013 standard size
+      inputSize: 48,   // 48x48 RGB (จาก face_expression_model.json)
       threshold: 0.6,
-      grayscale: true,  // FER2013 is grayscale
-      description: 'Picture Model - 7 emotions (FER2013)'
+      grayscale: false, // ใช้ RGB input
+      description: 'Face Expression Model - 7 emotions (CNN, 48x48x3)'
+    },
+    faceDetection: {
+      inputSize: 416,  // MediaPipe standard size
+      threshold: 0.5,
+      grayscale: false,
+      description: 'MediaPipe Face Detection - Real-time face detection'
     }
   },
   
@@ -101,7 +98,7 @@ export const CONFIG = {
 }
 
 // คำที่รวมทั้งหมด (สำหรับแสดงผล)
-export const ALL_WORDS = [...CONFIG.WORD_SETS.A, ...CONFIG.WORD_SETS.B, ...CONFIG.WORD_SETS.C]
+export const ALL_WORDS = [...CONFIG.WORD_SETS.hand]
 
 // ฟังก์ชันตรวจสอบว่าคำนี้อยู่ในรายการหรือไม่
 export function isValidWord(word) {
@@ -111,18 +108,12 @@ export function isValidWord(word) {
   return normalizedWords.includes(normalizedWord)
 }
 
-// ฟังก์ชันหาโมเดลที่ใช้สำหรับคำนั้น
+// ฟังก์ชันหาโมเดลที่ใช้สำหรับคำนั้น (โมเดลรวม)
 export function getModelForWord(word) {
   const normalizedWord = word.toLowerCase()
   
-  // เช็ค Hand A (ยังไม่มี JSON)
-  if (CONFIG.WORD_SETS.A.some(w => w.toLowerCase() === normalizedWord)) return 'handA'
-  
-  // เช็ค Hand B (มี JSON)
-  if (CONFIG.WORD_SETS.B.some(w => w.toLowerCase() === normalizedWord)) return 'handB'
-  
-  // เช็ค Hand C (มี JSON)
-  if (CONFIG.WORD_SETS.C.some(w => w.toLowerCase() === normalizedWord)) return 'handC'
+  // เช็ค Hand Model (รวม)
+  if (CONFIG.WORD_SETS.hand.some(w => w.toLowerCase() === normalizedWord)) return 'hand'
   
   return null
 }
@@ -204,13 +195,22 @@ export function filterPredictionsByThreshold(predictions, modelName) {
 // ฟังก์ชันสร้างข้อมูลโมเดลสำหรับแสดงผล
 export function getModelInfo(modelName) {
   const modelConfig = CONFIG.MODEL_CONFIGS[modelName]
-  const wordSet = CONFIG.WORD_SETS[modelName.replace('hand', '').toUpperCase()]
+  
+  // กำหนด wordSet ตาม modelName
+  let wordSet = []
+  if (modelName === 'hand') {
+    wordSet = CONFIG.WORD_SETS.hand
+  } else if (modelName === 'faceEmotion') {
+    wordSet = CONFIG.WORD_SETS.face
+  } else if (modelName === 'faceDetection') {
+    wordSet = ['face_detected', 'no_face'] // สำหรับ face detection
+  }
   
   return {
     name: modelName,
     config: modelConfig,
-    words: wordSet || [],
-    path: CONFIG.MODEL_PATHS[modelName],
-    type: CONFIG.MODEL_TYPES[modelName]
+    words: wordSet,
+    path: CONFIG.MODEL_PATHS[modelName] || CONFIG.MODEL_PATHS.face,
+    type: CONFIG.MODEL_TYPES[modelName] || 'tensorflow'
   }
 }

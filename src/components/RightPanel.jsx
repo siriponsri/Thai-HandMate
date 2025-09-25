@@ -13,18 +13,18 @@ export default function RightPanel() {
     const handleCapture = (event) => {
       const captureData = event.detail
       
-      // อัปเดตอารมณ์ล่าสุดจากข้อมูล face
-      if (captureData.face && captureData.face.bestEmotion) {
-        setLatestEmotion(captureData.face.bestEmotion)
-        console.log('😊 อารมณ์ล่าสุด:', captureData.face.bestEmotion, 
-                   `(${(captureData.face.confidence * 100).toFixed(1)}%)`)
+      // อัปเดตอารมณ์ล่าสุดจากข้อมูล emotion (ใช้ emotion แทน face)
+      if (captureData.emotion && captureData.emotion.bestEmotion) {
+        setLatestEmotion(captureData.emotion.bestEmotion)
+        console.log('😊 อารมณ์ล่าสุด:', captureData.emotion.bestEmotion, 
+                   `(${(captureData.emotion.confidence * 100).toFixed(1)}%)`)
       }
       
       // เพิ่มคำที่จับได้ (รวม Unknown ด้วย)
       const wordData = {
         ...captureData,
         id: Date.now(), // เพิ่ม ID สำหรับ key
-        imageUrl: captureData.imageBlob ? URL.createObjectURL(captureData.imageBlob) : null
+        imageUrl: captureData.thumbnailUrl || (captureData.imageBlob ? URL.createObjectURL(captureData.imageBlob) : null)
       }
       
       setCapturedWords(prev => [...prev, wordData])
@@ -35,8 +35,11 @@ export default function RightPanel() {
       if (captureData.hands && captureData.hands.allResults) {
         console.log('🤏 ผลลัพธ์ทั้งหมด (Hand):', captureData.hands.allResults)
       }
-      if (captureData.face && captureData.face.allEmotions) {
-        console.log('😊 อารมณ์ทั้งหมด (Face):', captureData.face.allEmotions)
+      if (captureData.emotion && captureData.emotion.allEmotions) {
+        console.log('😊 อารมณ์ทั้งหมด (Emotion):', captureData.emotion.allEmotions)
+      }
+      if (captureData.llmJson) {
+        console.log('🤖 LLM JSON:', captureData.llmJson)
       }
     }
     
@@ -62,16 +65,26 @@ export default function RightPanel() {
       
       console.log('📤 ส่งข้อมูลไป Backend:', { words, emotion: latestEmotion })
       
-      // เรียก API backend พร้อมข้อมูลอารมณ์
+      // รวม JSON จากทุกภาพที่จับได้
+      const llmData = {
+        capturedData: capturedWords.map(item => item.llmJson).filter(Boolean),
+        summary: {
+          words: capturedWords.map(item => item.hands?.bestWord || 'Unknown'),
+          emotions: capturedWords.map(item => item.emotion?.bestEmotion || 'neutral'),
+          overallEmotion: latestEmotion,
+          totalCaptures: capturedWords.length
+        }
+      }
+      
+      console.log('📤 ส่งข้อมูลไป Backend (LLM format):', llmData)
+      
+      // เรียก API backend พร้อมข้อมูลแบบใหม่
       const response = await fetch(`${CONFIG.API_BASE_URL}/api/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          words: words,
-          emotion: latestEmotion 
-        })
+        body: JSON.stringify(llmData)
       })
       
       if (response.ok) {
@@ -150,9 +163,14 @@ export default function RightPanel() {
                   <div className="result-confidence">
                     ความมั่นใจ: {((item.hands?.confidence || 0) * 100).toFixed(1)}%
                   </div>
-                  {item.face && item.face.bestEmotion && (
+                  {item.emotion && item.emotion.bestEmotion && (
                     <div className="text-sm text-blue-600">
-                      😊 อารมณ์: {item.face.bestEmotion} ({(item.face.confidence * 100).toFixed(1)}%)
+                      😊 อารมณ์: {item.emotion.bestEmotion} ({(item.emotion.confidence * 100).toFixed(1)}%)
+                    </div>
+                  )}
+                  {item.face && item.face.detected && (
+                    <div className="text-sm text-green-600">
+                      👤 ตรวจพบใบหน้า: {item.face.faceCount} ({(item.face.bestFaceConfidence * 100).toFixed(0)}%)
                     </div>
                   )}
                   {item.hands?.details && (

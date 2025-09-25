@@ -1,13 +1,16 @@
 import React, { useRef, useEffect, useState } from 'react'
-import { predict, loadModels, getModelStatus, processImage, processImageAsync } from '../lib/tm.js'
+import { loadModels, getModelStatus, processImageAsync } from '../lib/tm.js'
 import { CONFIG } from '../lib/config.js'
 
 export default function CameraFeed({ onCapture }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
+  const fileInputRef = useRef(null)
   const [stream, setStream] = useState(null)
   const [isCapturing, setIsCapturing] = useState(false)
   const [modelStatus, setModelStatus] = useState({ hasAnyModel: false, isLoading: false })
+  const [faceDetections, setFaceDetections] = useState([])
+  const [uploadedImage, setUploadedImage] = useState(null)
   
   // เริ่มกล้อง
   useEffect(() => {
@@ -56,6 +59,99 @@ export default function CameraFeed({ onCapture }) {
     initModels()
   }, [])
   
+  // จัดการการอัปโหลดรูปภาพ
+  const handleFileUpload = async (event) => {
+    const file = event.target.files[0]
+    if (!file) return
+    
+    // ตรวจสอบชนิดไฟล์
+    if (!file.type.startsWith('image/')) {
+      alert('กรุณาเลือกไฟล์รูปภาพเท่านั้น')
+      return
+    }
+    
+    setIsCapturing(true)
+    
+    try {
+      // อ่านไฟล์เป็น data URL
+      const reader = new FileReader()
+      reader.onload = async (e) => {
+        const img = new Image()
+        img.onload = async () => {
+          // สร้าง canvas สำหรับวาดภาพ
+          const canvas = canvasRef.current
+          const ctx = canvas.getContext('2d')
+          
+          // ปรับขนาด canvas ตามภาพ
+          canvas.width = img.width
+          canvas.height = img.height
+          
+          // วาดภาพลงบน canvas
+          ctx.drawImage(img, 0, 0)
+          
+          // แปลง canvas เป็น blob
+          canvas.toBlob(async (blob) => {
+            const thumbnailUrl = URL.createObjectURL(blob)
+            
+            try {
+              // ประมวลผลภาพ
+              const result = await processImageAsync(img)
+              
+              console.log('🎯 ผลการประมวลผลภาพที่อัปโหลด:', result)
+              
+              // อัปเดต face detections
+              if (result.face && result.face.faces) {
+                setFaceDetections(result.face.faces)
+              }
+              
+              // ส่งผลไปยัง parent component
+              const captureData = {
+                word: result.hands.bestWord,
+                confidence: result.hands.confidence,
+                thumbnailUrl: thumbnailUrl,
+                source: result.hands.source,
+                details: result.hands.details,
+                timestamp: result.timestamp,
+                hands: result.hands,
+                face: result.face,
+                emotion: result.emotion,
+                forLLM: result.forLLM,
+                llmJson: result.llmJson,
+                apiJson: result.apiJson,
+                isUploaded: true
+              }
+              
+              if (onCapture) {
+                onCapture(captureData)
+              }
+              
+              window.dispatchEvent(new CustomEvent('wordCaptured', { detail: captureData }))
+              
+            } catch (error) {
+              console.error('❌ ข้อผิดพลาดในการประมวลผลภาพ:', error)
+              alert('ไม่สามารถประมวลผลภาพได้')
+            }
+          }, 'image/jpeg', 0.8)
+        }
+        
+        img.src = e.target.result
+        setUploadedImage(e.target.result)
+      }
+      
+      reader.readAsDataURL(file)
+      
+    } catch (error) {
+      console.error('❌ ข้อผิดพลาดในการอัปโหลดภาพ:', error)
+      alert('ไม่สามารถอัปโหลดภาพได้')
+    } finally {
+      setIsCapturing(false)
+      // รีเซ็ต input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+  
   // ถ่ายภาพ
   const handleCapture = async () => {
     if (!videoRef.current || isCapturing) return
@@ -83,12 +179,16 @@ export default function CameraFeed({ onCapture }) {
           const result = await processImageAsync(video)
           
           console.log('🎯 ผลการประมวลผล (Hand + Face + Emotion):', result)
-          console.log('📄 LLM JSON:', result.llmJson)
+          
+          // อัปเดต face detections
+          if (result.face && result.face.faces) {
+            setFaceDetections(result.face.faces)
+          }
           
           // ส่งผลไปยัง parent component และ dispatch event
           const captureData = {
             // ข้อมูลหลักสำหรับแสดงผล (backward compatibility)
-            word: result.hands.bestWord,
+            word: result.hands.word,
             confidence: result.hands.confidence,
             thumbnailUrl: thumbnailUrl,
             source: result.hands.source,
@@ -147,7 +247,7 @@ export default function CameraFeed({ onCapture }) {
   
   return (
     <div className="card">
-      <div className="camera-container">
+      <div className="camera-container" style={{ position: 'relative' }}>
         {/* วิดีโอ */}
         <video
           ref={videoRef}
@@ -155,22 +255,76 @@ export default function CameraFeed({ onCapture }) {
           autoPlay
           playsInline
           muted
+          style={{ display: uploadedImage ? 'none' : 'block' }}
         />
+        
+        {/* แสดงภาพที่อัปโหลด */}
+        {uploadedImage && (
+          <img 
+            src={uploadedImage} 
+            alt="Uploaded" 
+            className="camera-video"
+            style={{ objectFit: 'contain' }}
+          />
+        )}
         
         {/* Canvas ซ่อน (สำหรับจับภาพ) */}
         <canvas ref={canvasRef} style={{ display: 'none' }} />
         
-        {/* ปุ่มถ่ายภาพ */}
+        {/* แสดงกรอบ Face Detection */}
+        {faceDetections.map((face, index) => (
+          <div
+            key={index}
+            style={{
+              position: 'absolute',
+              border: '3px solid #00ff00',
+              borderRadius: '8px',
+              left: `${face.box.x * 100}%`,
+              top: `${face.box.y * 100}%`,
+              width: `${face.box.width * 100}%`,
+              height: `${face.box.height * 100}%`,
+              pointerEvents: 'none',
+              boxShadow: '0 0 0 1px rgba(0, 255, 0, 0.3)'
+            }}
+          >
+            <span style={{
+              position: 'absolute',
+              top: '-25px',
+              left: '0',
+              background: '#00ff00',
+              color: '#000',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              fontSize: '12px',
+              fontWeight: 'bold'
+            }}>
+              Face {index + 1} ({(face.confidence * 100).toFixed(0)}%)
+            </span>
+          </div>
+        ))}
+        
+        {/* Input file ซ่อน */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileUpload}
+          style={{ display: 'none' }}
+        />
+        
+        {/* ปุ่มถ่ายภาพและอัปโหลด */}
         <div style={{ 
           position: 'absolute', 
           bottom: '1rem', 
           left: '50%', 
-          transform: 'translateX(-50%)'
+          transform: 'translateX(-50%)',
+          display: 'flex',
+          gap: '1rem'
         }}>
           <button
             className={`btn ${isCapturing ? 'btn-secondary' : 'btn-primary'}`}
             onClick={handleCapture}
-            disabled={isCapturing}
+            disabled={isCapturing || uploadedImage}
             style={{ minWidth: '120px' }}
           >
             {isCapturing ? (
@@ -182,6 +336,27 @@ export default function CameraFeed({ onCapture }) {
               '📸 ถ่ายภาพ'
             )}
           </button>
+          
+          <button
+            className="btn btn-accent"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isCapturing}
+            style={{ minWidth: '120px' }}
+          >
+            📁 อัปโหลดภาพ
+          </button>
+          
+          {uploadedImage && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setUploadedImage(null)
+                setFaceDetections([])
+              }}
+            >
+              ❌ ล้าง
+            </button>
+          )}
         </div>
         
         {/* แสดงสถานะโมเดล */}
